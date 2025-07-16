@@ -390,6 +390,19 @@ def column_stats():
             df = pd.read_excel(filepath)
         if column not in df.columns:
             return jsonify({'error': '找不到該欄位'}), 400
+
+        # 找到第一個空值的位置
+        first_empty = None
+        for idx, value in enumerate(df[column]):
+            if pd.isna(value) or str(value).strip() == '':
+                first_empty = idx
+                break
+        
+        # 如果找到空值，只取到那之前的資料
+        if first_empty is not None:
+            df = df.iloc[:first_empty].copy()
+        
+        # 處理數據
         raw_values = df[column].tolist()
         values = []
         skipped = 0
@@ -402,6 +415,7 @@ def column_stats():
                 values.append(float(v_str))
             except Exception:
                 skipped += 1
+        
         import numpy as np
         stats = {
             'mean': np.mean(values) if values else None,
@@ -413,7 +427,13 @@ def column_stats():
         }
         if not values:
             return jsonify({'error': '該欄位無有效數值可統計'}), 400
-        return jsonify({'column': column, 'stats': stats})
+            
+        # 將原始數據也發送回前端
+        return jsonify({
+            'column': column, 
+            'stats': stats,
+            'raw_data': raw_values  # 添加原始數據
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -443,15 +463,29 @@ def multi_subject_stats():
             df = pd.read_excel(filepath, sheet_name=sheet)
         else:
             df = pd.read_excel(filepath)
+        
         # 修正：去除欄位名稱前後空白，避免比對失敗
         df.columns = [str(c).strip() for c in df.columns]
         year_col = str(year_col).strip()
         subjects = [str(s).strip() for s in subjects]
+        
         if year_col not in df.columns:
             return jsonify({'error': f'找不到入學年度欄位: {year_col}，實際欄位有: {df.columns.tolist()}'}), 400
         for subj in subjects:
             if subj not in df.columns:
                 return jsonify({'error': f'找不到科目欄位: {subj}，實際欄位有: {df.columns.tolist()}'}), 400
+
+        # 找到第一個年度為空的位置
+        first_empty_year = None
+        for idx, row in df.iterrows():
+            if pd.isna(row[year_col]) or str(row[year_col]).strip() == '':
+                first_empty_year = idx
+                break
+        
+        # 如果找到空白年度，只取到那之前的資料
+        if first_empty_year is not None:
+            df = df.iloc[:first_empty_year].copy()
+        
         # 只取有選的欄位
         sub_df = df[[year_col] + subjects].copy()
         # 年度欄位統一型別（轉字串或 int，視需求）

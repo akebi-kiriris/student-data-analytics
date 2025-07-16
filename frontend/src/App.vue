@@ -392,14 +392,14 @@
     <div v-if="stats && stats.stats" class="results-panel">
       <h3>統計結果（{{ stats.column }}）</h3>
       <ul>
-        <li>平均數：{{ stats.stats.mean }}</li>
-        <li>變異數：{{ stats.stats.std }}</li>
-        <li>最小值：{{ stats.stats.min }}</li>
-        <li>最大值：{{ stats.stats.max }}</li>
+        <li>平均數：{{ stats.stats.mean?.toFixed(2) }}</li>
+        <li>變異數：{{ stats.stats.std?.toFixed(2) }}</li>
+        <li>最小值：{{ stats.stats.min?.toFixed(2) }}</li>
+        <li>最大值：{{ stats.stats.max?.toFixed(2) }}</li>
         <li>有效筆數：{{ stats.stats.count }}</li>
         <li v-if="stats.stats.skipped && stats.stats.skipped > 0" style="color: #f56c6c;">略過無法計算的資料筆數：{{ stats.stats.skipped }}</li>
       </ul>
-      <div style="max-width:600px;margin:20px 0;">
+      <div style="max-width:1200px;margin:20px auto;">
         <canvas id="chart"></canvas>
       </div>
       <div v-if="stats.stats && stats.stats.count > 0">
@@ -411,20 +411,38 @@
           <li v-else>數值分布適中。</li>
           <li v-if="stats.stats.max === stats.stats.min">最大值與最小值相同，資料無變化。</li>
         </ul>
-
       </div>
 
-      <div v-if="rawData.length">
-        <h3>原始資料（{{ selectedColumn }}）</h3>
-        <div style="max-height:200px;overflow:auto;border:1px solid #eee;padding:8px;">
-          <div v-for="(item, idx) in rawData" :key="idx">{{ item }}</div>
-        </div>
+      <div v-if="stats.raw_data && stats.raw_data.length">
+        <el-divider>原始資料</el-divider>
+        <el-table
+          :data="stats.raw_data.map((value, index) => ({ index: index + 1, value }))"
+          style="width: 100%"
+          :max-height="400"
+          border
+          stripe
+        >
+          <el-table-column
+            prop="index"
+            label="序號"
+            width="100"
+            fixed
+          />
+          <el-table-column
+            prop="value"
+            :label="stats.column"
+          >
+            <template #default="scope">
+              {{ scope.row.value === null || scope.row.value === '' ? '-' : scope.row.value }}
+            </template>
+          </el-table-column>
+        </el-table>
       </div>
     </div>
 
     <div v-if="multiStats">
       <h3>多科目分年平均統計</h3>
-      <div style="max-width:800px;margin:20px 0;">
+      <div style="max-width:1200px;margin:20px auto;">
         <canvas id="multiChart"></canvas>
       </div>
       <div>
@@ -508,10 +526,6 @@
 
     <!-- 入學生學校來源分析結果 -->
     <div v-if="schoolSourceStats">
-      <h3>入學生學校來源統計</h3>
-      <div style="max-width:1000px;margin:20px 0;">
-        <canvas id="schoolSourceChart"></canvas>
-      </div>
       <div>
         <h4>統計摘要</h4>
         <ul>
@@ -527,29 +541,59 @@
       </div>
       <div>
         <h4>各年度學校類型分布詳細數據</h4>
-        <div class="pretty-table-wrapper">
-          <table class="pretty-table">
-            <thead>
-              <tr>
-                <th>年份/學校類型</th>
-                <th v-for="schoolType in schoolSourceStats.school_types" :key="schoolType">{{ schoolType }}</th>
-                <th>年度總計</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(year, i) in schoolSourceStats.years" :key="i">
-                <td><strong>{{ year }}</strong></td>
-                <td v-for="schoolType in schoolSourceStats.school_types" :key="schoolType">
-                  {{ schoolSourceStats.data[schoolType].counts[i] }}
-                  <span style="color: #999; font-size: 12px;">
-                    ({{ schoolSourceStats.data[schoolType].percentages[i] }}%)
-                  </span>
-                </td>
-                <td><strong>{{ schoolSourceStats.year_totals[i] }}</strong></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <el-table 
+          :data="schoolSourceStats.years.map((year, index) => ({
+            year,
+            ...Object.fromEntries(schoolSourceStats.school_types.map(type => [
+              type,
+              {
+                count: schoolSourceStats.data[type].counts[index],
+                percentage: schoolSourceStats.data[type].percentages[index]
+              }
+            ])),
+            total: schoolSourceStats.year_totals[index]
+          }))"
+          border 
+          style="width: 100%"
+          :max-height="500"
+        >
+          <el-table-column 
+            prop="year" 
+            label="年份" 
+            width="100"
+            fixed
+          >
+            <template #default="scope">
+              <strong>{{ scope.row.year }}</strong>
+            </template>
+          </el-table-column>
+          
+          <el-table-column 
+            v-for="type in schoolSourceStats.school_types" 
+            :key="type" 
+            :prop="type" 
+            :label="type"
+            min-width="150"
+          >
+            <template #default="scope">
+              {{ scope.row[type].count }}
+              <span style="color: #999; font-size: 12px;">
+                ({{ scope.row[type].percentage }}%)
+              </span>
+            </template>
+          </el-table-column>
+          
+          <el-table-column 
+            prop="total" 
+            label="年度總計"
+            width="120"
+            fixed="right"
+          >
+            <template #default="scope">
+              <strong>{{ scope.row.total }}</strong>
+            </template>
+          </el-table-column>
+        </el-table>
       </div>
     </div>
 
@@ -574,29 +618,59 @@
       </div>
       <div>
         <h4>各年度入學管道分布詳細數據</h4>
-        <div class="pretty-table-wrapper">
-          <table class="pretty-table">
-            <thead>
-              <tr>
-                <th>年份/入學管道</th>
-                <th v-for="methodType in admissionMethodStats.method_types" :key="methodType">{{ methodType }}</th>
-                <th>年度總計</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(year, i) in admissionMethodStats.years" :key="i">
-                <td><strong>{{ year }}</strong></td>
-                <td v-for="methodType in admissionMethodStats.method_types" :key="methodType">
-                  {{ admissionMethodStats.data[methodType].counts[i] }}
-                  <span style="color: #999; font-size: 12px;">
-                    ({{ admissionMethodStats.data[methodType].percentages[i] }}%)
-                  </span>
-                </td>
-                <td><strong>{{ admissionMethodStats.year_totals[i] }}</strong></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <el-table 
+          :data="admissionMethodStats.years.map((year, index) => ({
+            year,
+            ...Object.fromEntries(admissionMethodStats.method_types.map(type => [
+              type,
+              {
+                count: admissionMethodStats.data[type].counts[index],
+                percentage: admissionMethodStats.data[type].percentages[index]
+              }
+            ])),
+            total: admissionMethodStats.year_totals[index]
+          }))"
+          border 
+          style="width: 100%"
+          :max-height="500"
+        >
+          <el-table-column 
+            prop="year" 
+            label="年份" 
+            width="100"
+            fixed
+          >
+            <template #default="scope">
+              <strong>{{ scope.row.year }}</strong>
+            </template>
+          </el-table-column>
+          
+          <el-table-column 
+            v-for="type in admissionMethodStats.method_types" 
+            :key="type" 
+            :prop="type" 
+            :label="type"
+            min-width="150"
+          >
+            <template #default="scope">
+              {{ scope.row[type].count }}
+              <span style="color: #999; font-size: 12px;">
+                ({{ scope.row[type].percentage }}%)
+              </span>
+            </template>
+          </el-table-column>
+          
+          <el-table-column 
+            prop="total" 
+            label="年度總計"
+            width="120"
+            fixed="right"
+          >
+            <template #default="scope">
+              <strong>{{ scope.row.total }}</strong>
+            </template>
+          </el-table-column>
+        </el-table>
       </div>
     </div>
 
@@ -921,15 +995,7 @@ const drawChart = () => {
     }
     return
   }
-  // 僅繪製數值型資料
-  const dataArr = rawData.value.map(Number).filter(v => !isNaN(v))
-  if (!dataArr.length) {
-    if (chartInstance) {
-      chartInstance.destroy()
-      chartInstance = null
-    }
-    return
-  }
+  
   nextTick(() => {
     const ctx = document.getElementById('chart')
     if (!ctx) {
@@ -939,28 +1005,58 @@ const drawChart = () => {
       }
       return
     }
+    
     if (chartInstance) {
       chartInstance.destroy()
     }
+    
+    // 嘗試轉換數值並過濾無效值
+    const validData = rawData.value.map((value, index) => ({
+      value: Number(value),
+      index: index + 1
+    })).filter(item => !isNaN(item.value))
+    
+    // 如果沒有有效數據，不繪製圖表
+    if (validData.length === 0) {
+      return
+    }
+    
     chartInstance = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: dataArr.map((_, i) => i + 1),
+        labels: validData.map(item => item.index),
         datasets: [{
           label: stats.value.column,
-          data: dataArr,
-          backgroundColor: 'rgba(54, 162, 235, 0.5)'
+          data: validData.map(item => item.value),
+          backgroundColor: 'rgba(54, 162, 235, 0.5)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          borderWidth: 1
         }]
       },
       options: {
         responsive: true,
         plugins: {
-          legend: { display: false },
-          title: { display: true, text: '原始數值分布圖' }
+          title: { 
+            display: true, 
+            text: '數值分布圖',
+            font: { size: 16 }
+          },
+          legend: { position: 'top' }
         },
         scales: {
-          x: { title: { display: true, text: '資料序號' } },
-          y: { title: { display: true, text: '數值' } }
+          x: {
+            title: { 
+              display: true, 
+              text: '資料序號' 
+            }
+          },
+          y: {
+            title: { 
+              display: true, 
+              text: '數值' 
+            },
+            beginAtZero: true
+          }
         }
       }
     })
@@ -1914,7 +2010,7 @@ const loadFileColumns = async () => {
       admissionYearCol.value = '入學年度'
       schoolSourceYearCol.value = '入學年度'
       admissionMethodYearCol.value = '入學年度'
-    } else if (columns.value.length > 0) {
+       } else if (columns.value.length > 0) {
       yearCol.value = columns.value[0]
       admissionYearCol.value = columns.value[0]
       schoolSourceYearCol.value = columns.value[0]
@@ -1982,8 +2078,15 @@ const getColumnStats = async () => {
       column: selectedColumn.value
     })
     stats.value = res.data
+    if (res.data.raw_data) {
+      rawData.value = res.data.raw_data
+    }
+    nextTick(() => {
+      drawChart()
+    })
   } catch (err) {
     stats.value = null
+    rawData.value = []
     alert('❌ 統計失敗，請確認欄位為數值型態')
     console.error(err)
   }
