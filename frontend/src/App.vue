@@ -1,35 +1,51 @@
 <template>
-  <div>
-    <el-upload
-      class="upload-demo"
-      :action="uploadUrl"
-      :on-success="handleUploadSuccess"
-      :before-upload="beforeUpload"
-      :show-file-list="false"
-      accept=".xlsx,.xls"
-    >
-      <el-button type="primary">上傳 Excel</el-button>
-    </el-upload>
+  <div class="app-container">
+    <!-- 路由導航 -->
+    <div class="app-header">
+      <nav class="app-nav">
+        <router-link to="/login" class="nav-item">登入</router-link>
+        <router-link to="/dashboard" class="nav-item">主控台</router-link>
+        <router-link to="/data-management" class="nav-item">數據管理</router-link>
+        <router-link to="/analysis" class="nav-item">數據分析</router-link>
+        <router-link to="/user-management" class="nav-item">用戶管理</router-link>
+      </nav>
+    </div>
 
-    <el-divider>或選擇已上傳的檔案</el-divider>
+    <!-- 路由視圖或原始內容 -->
+    <router-view v-if="$route.name !== 'Home'" />
+    
+    <!-- 原始數據分析內容 -->
+    <div v-else class="original-content">
+      <el-upload
+        class="upload-demo"
+        :action="uploadUrl"
+        :on-success="handleUploadSuccess"
+        :before-upload="beforeUpload"
+        :show-file-list="false"
+        accept=".xlsx,.xls"
+      >
+        <el-button type="primary">上傳 Excel</el-button>
+      </el-upload>
 
-    <el-select v-model="selectedFile" placeholder="請選擇檔案" style="width: 300px" @change="loadFileSheets">
-      <el-option
-        v-for="file in fileList"
-        :key="file"
-        :label="file"
-        :value="file"
-      />
-    </el-select>
+      <el-divider>或選擇已上傳的檔案</el-divider>
 
-    <el-select v-if="sheetList.length" v-model="selectedSheet" placeholder="請選擇工作表" style="width: 300px; margin-top: 10px;" @change="loadFileColumns">
-      <el-option
-        v-for="sheet in sheetList"
-        :key="sheet"
-        :label="sheet"
-        :value="sheet"
-      />
-    </el-select>
+      <el-select v-model="selectedFile" placeholder="請選擇檔案" style="width: 300px" @change="loadFileSheets">
+        <el-option
+          v-for="file in fileList"
+          :key="file"
+          :label="file"
+          :value="file"
+        />
+      </el-select>
+
+      <el-select v-if="sheetList.length" v-model="selectedSheet" placeholder="請選擇工作表" style="width: 300px; margin-top: 10px;" @change="loadFileColumns">
+        <el-option
+          v-for="sheet in sheetList"
+          :key="sheet"
+          :label="sheet"
+          :value="sheet"
+        />
+      </el-select>
 
     <el-divider>數據分析選項</el-divider>
 
@@ -400,7 +416,7 @@
         <li v-if="stats.stats.skipped && stats.stats.skipped > 0" style="color: #f56c6c;">略過無法計算的資料筆數：{{ stats.stats.skipped }}</li>
       </ul>
       <div style="max-width:1200px;margin:20px auto;">
-        <canvas id="chart"></canvas>
+        <canvas id="chart" style="width: 100%; height: 400px;"></canvas>
       </div>
       <div v-if="stats.stats && stats.stats.count > 0">
         <p>分析：</p>
@@ -443,7 +459,7 @@
     <div v-if="multiStats">
       <h3>多科目分年平均統計</h3>
       <div style="max-width:1200px;margin:20px auto;">
-        <canvas id="multiChart"></canvas>
+        <canvas id="multiChart" style="width: 100%; height: 400px;"></canvas>
       </div>
       <div>
         <h4>原始數據</h4>
@@ -470,7 +486,7 @@
     <div v-if="yearlyAdmissionStats" class="analysis-section">
       <h3>每年入學生數量統計</h3>
       <div class="chart-container">
-        <canvas id="yearlyAdmissionChart"></canvas>
+        <canvas id="yearlyAdmissionChart" style="width: 100%; height: 400px;"></canvas>
       </div>
       <div class="statistics-summary">
         <h4>統計摘要</h4>
@@ -526,6 +542,10 @@
 
     <!-- 入學生學校來源分析結果 -->
     <div v-if="schoolSourceStats">
+      <h3>入學生學校來源統計</h3>
+      <div style="max-width:1000px;margin:20px 0;">
+        <canvas id="schoolSourceChart" style="width: 100%; height: 400px;"></canvas>
+      </div>
       <div>
         <h4>統計摘要</h4>
         <ul>
@@ -601,7 +621,7 @@
     <div v-if="admissionMethodStats">
       <h3>入學生入學管道統計</h3>
       <div style="max-width:1000px;margin:20px 0;">
-        <canvas id="admissionMethodChart"></canvas>
+        <canvas id="admissionMethodChart" style="width: 100%; height: 400px;"></canvas>
       </div>
       <div>
         <h4>統計摘要</h4>
@@ -674,10 +694,50 @@
       </div>
     </div>
 
+    </div> <!-- 結束 original-content div -->
   </div>
 </template>
 
 <style scoped>
+/* 最外層容器 */
+.app-container {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+/* 路由導航樣式 */
+.app-header {
+  background-color: #1976d2;
+  padding: 10px 0;
+  margin-bottom: 0;
+}
+
+.app-nav {
+  display: flex;
+  gap: 20px;
+  padding: 0 20px;
+}
+
+.nav-item {
+  color: white;
+  text-decoration: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  transition: background-color 0.3s;
+}
+
+.nav-item:hover,
+.nav-item.router-link-active {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.original-content {
+  padding: 20px;
+}
+
+/* 原始樣式 */
 .pretty-table-wrapper {
   max-width: 800px;
   overflow-x: auto;
@@ -832,7 +892,7 @@
 
 .chart-container canvas {
   width: 100% !important;
-  height: auto !important;
+  max-height: 400px !important;
   aspect-ratio: 16/9;
 }
 
@@ -1189,7 +1249,7 @@ const drawYearlyAdmissionChart = () => {
       },
       options: {
         responsive: true,
-        maintainAspectRatio: false,
+        maintainAspectRatio: true,
         interaction: {
           intersect: false,
           mode: 'index'
