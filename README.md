@@ -56,8 +56,11 @@ cd backend
 python -m venv venv
 # Windows
 venv\Scripts\activate
+
 # Linux/Mac
 source venv/bin/activate
+
+# 安裝依賴並啟動伺服器
 pip install -r requirements.txt
 python app.py
 ```
