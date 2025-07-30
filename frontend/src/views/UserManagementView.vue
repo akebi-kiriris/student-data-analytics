@@ -13,47 +13,6 @@
     </header>
 
     <div class="main-layout">
-      <!-- 側邊欄 -->
-      <aside class="sidebar">
-        <nav class="sidebar-nav">
-          <ul class="nav-menu">
-            <li class="nav-item">
-              <a href="#" @click="$router.push('/dashboard')" class="nav-link">
-                <span class="nav-icon">🏠</span>
-                <span class="nav-text">主控台</span>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a href="#" @click="$router.push('/analysis')" class="nav-link">
-                <span class="nav-icon">📊</span>
-                <span class="nav-text">數據分析</span>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a href="#" @click="$router.push('/data-management')" class="nav-link">
-                <span class="nav-icon">📋</span>
-                <span class="nav-text">數據管理</span>
-              </a>
-            </li>
-            <li class="nav-item active">
-              <a href="#" class="nav-link">
-                <span class="nav-icon">👥</span>
-                <span class="nav-text">用戶管理</span>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a href="#" class="nav-link">
-                <span class="nav-icon">⚙️</span>
-                <span class="nav-text">設定</span>
-              </a>
-            </li>
-          </ul>
-        </nav>
-        <div class="sidebar-footer">
-          <span class="version">版本 v1.0</span>
-        </div>
-      </aside>
-
       <!-- 主內容區域 -->
       <main class="main-content">
         <div class="page-header">

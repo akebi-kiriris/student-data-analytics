@@ -3,7 +3,8 @@ import LoginView from '../views/LoginView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import DataManagementView from '../views/DataManagementView.vue'
 import AnalysisView from '../views/AnalysisView.vue'
-import UserManagementView from '../views/UserManagementView.vue'
+// 暫時隱藏用戶管理頁面導入
+// import UserManagementView from '../views/UserManagementView.vue'
 
 const routes = [
   {
@@ -49,6 +50,8 @@ const routes = [
       requiresAuth: true
     }
   },
+  // 暫時隱藏用戶管理路由
+  /*
   {
     path: '/user-management',
     name: 'UserManagement',
@@ -59,6 +62,7 @@ const routes = [
       requiresAdmin: true
     }
   }
+  */
 ]
 
 const router = createRouter({

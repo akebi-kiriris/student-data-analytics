@@ -4,6 +4,11 @@
     <header class="top-navbar">
       <div class="navbar-left">
         <h1 class="system-title">🎓 學生資料分析系統</h1>
+        <nav class="nav-links">
+          <router-link to="/dashboard" class="nav-link">主控台</router-link>
+          <router-link to="/data-management" class="nav-link">數據管理</router-link>
+          <router-link to="/analysis" class="nav-link">數據分析</router-link>
+        </nav>
       </div>
       <div class="navbar-right">
         <span class="current-time">{{ currentTime }}</span>
@@ -13,47 +18,6 @@
     </header>
 
     <div class="main-layout">
-      <!-- 側邊欄 -->
-      <aside class="sidebar">
-        <nav class="sidebar-nav">
-          <ul class="nav-menu">
-            <li class="nav-item">
-              <a href="#" @click="$router.push('/dashboard')" class="nav-link">
-                <span class="nav-icon">🏠</span>
-                <span class="nav-text">主控台</span>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a href="#" @click="$router.push('/analysis')" class="nav-link">
-                <span class="nav-icon">📊</span>
-                <span class="nav-text">數據分析</span>
-              </a>
-            </li>
-            <li class="nav-item active">
-              <a href="#" class="nav-link">
-                <span class="nav-icon">📋</span>
-                <span class="nav-text">數據管理</span>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a href="#" @click="$router.push('/user-management')" class="nav-link">
-                <span class="nav-icon">👥</span>
-                <span class="nav-text">用戶管理</span>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a href="#" class="nav-link">
-                <span class="nav-icon">⚙️</span>
-                <span class="nav-text">設定</span>
-              </a>
-            </li>
-          </ul>
-        </nav>
-        <div class="sidebar-footer">
-          <span class="version">版本 v1.0</span>
-        </div>
-      </aside>
-
       <!-- 主內容區域 -->
       <main class="main-content">
         <div class="page-header">
@@ -567,13 +531,13 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* 複用主控台的樣式 */
 .data-management-container {
   height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
+/* 頂部導航欄 */
 .top-navbar {
   height: 60px;
   background-color: white;
@@ -589,6 +553,36 @@ onMounted(() => {
   color: #1976d2;
   font-size: 18px;
   margin: 0;
+  margin-right: 30px;
+}
+
+.navbar-left {
+  display: flex;
+  align-items: center;
+}
+
+.nav-links {
+  display: flex;
+  gap: 20px;
+}
+
+.nav-link {
+  color: #666;
+  text-decoration: none;
+  font-size: 14px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+
+.nav-link:hover {
+  background-color: #f5f5f5;
+  color: #1976d2;
+}
+
+.nav-link.router-link-active {
+  background-color: #1976d2;
+  color: white;
 }
 
 .navbar-right {
@@ -634,40 +628,6 @@ onMounted(() => {
 .sidebar-nav {
   flex: 1;
   padding: 20px 0;
-}
-
-.nav-menu {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.nav-item {
-  margin-bottom: 4px;
-}
-
-.nav-link {
-  display: flex;
-  align-items: center;
-  padding: 12px 20px;
-  color: #b0bec5;
-  text-decoration: none;
-  transition: all 0.3s;
-}
-
-.nav-item.active .nav-link,
-.nav-link:hover {
-  background-color: #1976d2;
-  color: white;
-}
-
-.nav-icon {
-  margin-right: 12px;
-  font-size: 16px;
-}
-
-.nav-text {
-  font-size: 14px;
 }
 
 .sidebar-footer {

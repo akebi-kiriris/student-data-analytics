@@ -4,6 +4,11 @@
     <header class="top-navbar">
       <div class="navbar-left">
         <h1 class="system-title">🎓 學生資料分析系統</h1>
+        <nav class="nav-links">
+          <router-link to="/dashboard" class="nav-link">主控台</router-link>
+          <router-link to="/data-management" class="nav-link">數據管理</router-link>
+          <router-link to="/analysis" class="nav-link">數據分析</router-link>
+        </nav>
       </div>
       <div class="navbar-right">
         <span class="current-time">{{ currentTime }}</span>
@@ -13,47 +18,6 @@
     </header>
 
     <div class="main-layout">
-      <!-- 側邊欄 -->
-      <aside class="sidebar">
-        <nav class="sidebar-nav">
-          <ul class="nav-menu">
-            <li class="nav-item active">
-              <a href="#" class="nav-link">
-                <span class="nav-icon">🏠</span>
-                <span class="nav-text">主控台</span>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a href="#" @click="$router.push('/analysis')" class="nav-link">
-                <span class="nav-icon">📊</span>
-                <span class="nav-text">數據分析</span>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a href="#" @click="$router.push('/data-management')" class="nav-link">
-                <span class="nav-icon">📋</span>
-                <span class="nav-text">數據管理</span>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a href="#" @click="$router.push('/user-management')" class="nav-link">
-                <span class="nav-icon">👥</span>
-                <span class="nav-text">用戶管理</span>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a href="#" class="nav-link">
-                <span class="nav-icon">⚙️</span>
-                <span class="nav-text">設定</span>
-              </a>
-            </li>
-          </ul>
-        </nav>
-        <div class="sidebar-footer">
-          <span class="version">版本 v1.0</span>
-        </div>
-      </aside>
-
       <!-- 主內容區域 -->
       <main class="main-content">
         <!-- 歡迎區域 -->
@@ -74,7 +38,8 @@
                 <div class="stat-label">筆資料</div>
               </div>
             </div>
-            <div class="stat-card">
+            <!-- 暫時隱藏用戶管理統計 -->
+            <div v-if="showUserManagement" class="stat-card">
               <div class="stat-icon">👥</div>
               <div class="stat-content">
                 <div class="stat-number">{{ stats.totalUsers }}</div>
@@ -147,32 +112,17 @@ const router = useRouter()
 const currentUser = ref('管理者')
 const currentTime = ref('')
 const currentDate = ref('')
+
+// 功能開關
+const showUserManagement = ref(false) // 暫時隱藏用戶管理功能
+
 const stats = ref({
-  totalData: '1,250',
-  totalUsers: '15',
-  totalReports: '89',
-  totalFiles: '42'
+  totalData: '0',
+  totalUsers: '0',
+  totalReports: '0',
+  totalFiles: '0'
 })
-const recentActivities = ref([
-  {
-    id: 1,
-    icon: '📋',
-    time: '2025/07/21 10:30',
-    description: '管理者上傳了新的學生資料 (120筆)'
-  },
-  {
-    id: 2,
-    icon: '📊',
-    time: '2025/07/20 15:45',
-    description: '完成了入學管道分析報告'
-  },
-  {
-    id: 3,
-    icon: '👥',
-    time: '2025/07/20 09:15',
-    description: '新增用戶：張教授'
-  }
-])
+const recentActivities = ref([])
 
 let timeInterval = null
 
@@ -239,6 +189,38 @@ onBeforeUnmount(() => {
   color: #1976d2;
   font-size: 18px;
   margin: 0;
+  margin-right: 30px;
+}
+
+.navbar-left {
+  display: flex;
+  align-items: center;
+}
+
+
+
+.nav-links {
+  display: flex;
+  gap: 20px;
+}
+
+.nav-link {
+  color: #666;
+  text-decoration: none;
+  font-size: 14px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+
+.nav-link:hover {
+  background-color: #f5f5f5;
+  color: #1976d2;
+}
+
+.nav-link.router-link-active {
+  background-color: #1976d2;
+  color: white;
 }
 
 .navbar-right {
@@ -298,21 +280,6 @@ onBeforeUnmount(() => {
   margin-bottom: 4px;
 }
 
-.nav-link {
-  display: flex;
-  align-items: center;
-  padding: 12px 20px;
-  color: #b0bec5;
-  text-decoration: none;
-  transition: all 0.3s;
-}
-
-.nav-item.active .nav-link,
-.nav-link:hover {
-  background-color: #1976d2;
-  color: white;
-}
-
 .nav-icon {
   margin-right: 12px;
   font-size: 16px;
@@ -369,7 +336,7 @@ onBeforeUnmount(() => {
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 20px;
 }
 

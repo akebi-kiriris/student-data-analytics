@@ -1,13 +1,14 @@
 <template>
   <div class="app-container">
-    <!-- 路由導航 -->
-    <div class="app-header">
+    <!-- 只有在 Home 頁面才顯示路由導航 -->
+    <div v-if="$route.name === 'Home'" class="app-header">
       <nav class="app-nav">
         <router-link to="/login" class="nav-item">登入</router-link>
         <router-link to="/dashboard" class="nav-item">主控台</router-link>
         <router-link to="/data-management" class="nav-item">數據管理</router-link>
         <router-link to="/analysis" class="nav-item">數據分析</router-link>
-        <router-link to="/user-management" class="nav-item">用戶管理</router-link>
+        <!-- 暫時隱藏用戶管理導覽 -->
+        <router-link v-if="showUserManagement" to="/user-management" class="nav-item">用戶管理</router-link>
       </nav>
     </div>
 
@@ -1008,6 +1009,9 @@
 <script setup>
 // 用於儲存所有需要清理的函數
 const cleanupFunctions = []
+
+// 功能開關
+const showUserManagement = ref(false) // 暫時隱藏用戶管理功能
 
 const stats = ref(null)
 const uploadUrl = 'http://localhost:5000/api/upload'

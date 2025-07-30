@@ -1,5 +1,22 @@
 <template>
   <div class="analysis-page">
+    <!-- 頂部導航欄 -->
+    <header class="top-navbar">
+      <div class="navbar-left">
+        <h1 class="system-title">🎓 學生資料分析系統</h1>
+        <nav class="nav-links">
+          <router-link to="/dashboard" class="nav-link">主控台</router-link>
+          <router-link to="/data-management" class="nav-link">數據管理</router-link>
+          <router-link to="/analysis" class="nav-link">數據分析</router-link>
+        </nav>
+      </div>
+      <div class="navbar-right">
+        <span class="current-time">{{ currentTime }}</span>
+        <span class="user-info">👤 {{ currentUser }}</span>
+        <button @click="handleLogout" class="logout-btn">🚪 登出</button>
+      </div>
+    </header>
+
     <div class="main-content">
       <!-- 數據來源選擇 -->
       <div class="data-source-section">
@@ -658,9 +675,26 @@
 import { ref, onMounted, nextTick, watch, onBeforeUnmount } from 'vue'
 import { UploadFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
 import axios from 'axios'
 import Chart from 'chart.js/auto'
 import * as echarts from 'echarts'
+
+// 導航欄相關
+const router = useRouter()
+const currentTime = ref('')
+const currentUser = ref('管理者')
+
+// 更新時間
+const updateTime = () => {
+  const now = new Date()
+  currentTime.value = now.toLocaleString('zh-TW')
+}
+
+// 登出處理
+const handleLogout = () => {
+  router.push('/')
+}
 
 // 響應式數據
 const fileList = ref([])
@@ -1292,7 +1326,7 @@ const renderSchoolSourceChart = (data) => {
         plugins: {
           title: { 
             display: true, 
-            text: '各年度入學生學校來源類型分布' 
+            text: '(下方圖表中各年度入學生學校來源類型分布)' 
           },
           legend: { 
             position: 'top',
@@ -1803,10 +1837,92 @@ const handleTabChange = (tab) => {
 // 初始化
 onMounted(() => {
   loadFileList()
+  
+  // 初始化時間並設置定時更新
+  updateTime()
+  const timeInterval = setInterval(updateTime, 1000)
+  
+  // 在組件銷毀時清理定時器
+  cleanupFunctions.push(() => clearInterval(timeInterval))
 })
 </script>
 
 <style scoped>
+/* 頂部導航欄 */
+.top-navbar {
+  height: 60px;
+  background-color: white;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.navbar-left .system-title {
+  color: #1976d2;
+  font-size: 18px;
+  margin: 0;
+  margin-right: 30px;
+}
+
+.navbar-left {
+  display: flex;
+  align-items: center;
+}
+
+.nav-links {
+  display: flex;
+  gap: 20px;
+}
+
+.nav-link {
+  color: #666;
+  text-decoration: none;
+  font-size: 14px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+
+.nav-link:hover {
+  background-color: #f5f5f5;
+  color: #1976d2;
+}
+
+.nav-link.router-link-active {
+  background-color: #1976d2;
+  color: white;
+}
+
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.current-time, .user-info {
+  color: #666;
+  font-size: 14px;
+}
+
+.logout-btn {
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  transition: background-color 0.3s;
+}
+
+.logout-btn:hover {
+  background-color: #f5f5f5;
+}
+
+
 .analysis-page {
   min-height: 100vh;
   background: white;
@@ -1820,7 +1936,7 @@ onMounted(() => {
   margin: 0;
   padding: 20px;
   background: white;
-  min-height: 100vh;
+  min-height: calc(100vh - 70px);
   box-shadow: none;
 }
 

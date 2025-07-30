@@ -53,14 +53,6 @@ def classify_admission_method(method_name):
     # 如果都不符合，歸類為其他
     return '其他'
     
-    # 按優先級檢查每個規則
-    for method_type, patterns in classification_rules:
-        for pattern in patterns:
-            if re.search(pattern, method_name, re.IGNORECASE):
-                return method_type
-    
-    # 如果都不符合，歸類為其他
-    return '其他'
 
 
 # 學校類型分類邏輯
