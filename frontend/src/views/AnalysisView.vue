@@ -22,45 +22,59 @@
       <div class="data-source-section">
         <el-divider>選擇數據來源</el-divider>
         
-        <el-upload
-          drag
-          action="http://localhost:5000/api/upload"
-          :on-success="handleUploadSuccess"
-          :on-error="handleUploadError"
-          :show-file-list="false"
-          accept=".xlsx,.xls"
-          style="width: 100%; margin-bottom: 20px;"
-        >
-          <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-          <div class="el-upload__text">
-            拖拽檔案到此處，或<em>點擊上傳</em>
-          </div>
-          <template #tip>
-            <div class="el-upload__tip">
-              只能上傳 .xlsx/.xls 檔案
+        <div class="database-source-section">
+          <h3>從資料庫選擇數據</h3>
+          <p>選擇已存入資料庫的數據表格進行分析</p>
+          
+          <el-select 
+            v-model="selectedTable" 
+            placeholder="請選擇資料表格" 
+            style="width: 100%; max-width: 500px;" 
+            @change="loadTableColumns"
+            filterable
+          >
+            <el-option
+              v-for="table in databaseTables"
+              :key="table.table_name"
+              :label="table.display_name"
+              :value="table.table_name"
+            />
+          </el-select>
+          
+          <!-- 自動選擇欄位提示 -->
+          <div v-if="selectedTable && columns.length > 0" class="auto-select-info">
+            <h4>🤖 智能欄位識別</h4>
+            <p>系統已自動為您識別和選擇合適的欄位：</p>
+            <div class="auto-select-items">
+              <div v-if="yearCol" class="auto-select-item">
+                📅 年度欄位: <strong>{{ yearCol }}</strong>
+              </div>
+              <div v-if="genderCol" class="auto-select-item">
+                👥 性別欄位: <strong>{{ genderCol }}</strong>
+              </div>
+              <div v-if="schoolNameCol" class="auto-select-item">
+                🏫 學校欄位: <strong>{{ schoolNameCol }}</strong>
+              </div>
+              <div v-if="admissionMethodCol" class="auto-select-item">
+                🎯 入學管道欄位: <strong>{{ admissionMethodCol }}</strong>
+              </div>
+              <div v-if="geoRegionCol" class="auto-select-item">
+                🗺️ 地區欄位: <strong>{{ geoRegionCol }}</strong>
+              </div>
+              <div v-if="selectedSubjects.length > 0" class="auto-select-item">
+                📊 科目欄位: <strong>{{ selectedSubjects.join(', ') }}</strong>
+              </div>
             </div>
-          </template>
-        </el-upload>
+            <p class="auto-select-note">您可以在各分析區塊中手動調整這些選擇</p>
+          </div>
+        </div>
 
-        <el-divider>或選擇已上傳的檔案</el-divider>
+        <el-divider>或上傳新檔案到資料庫</el-divider>
+        
+        <div class="upload-hint">
+          <p>如需上傳新的 Excel 檔案，請前往 <router-link to="/data-management">數據管理</router-link> 頁面</p>
+        </div>
 
-        <el-select v-model="selectedFile" placeholder="請選擇檔案" style="width: 300px" @change="loadFileSheets">
-          <el-option
-            v-for="file in fileList"
-            :key="file"
-            :label="file"
-            :value="file"
-          />
-        </el-select>
-
-        <el-select v-if="sheetList.length" v-model="selectedSheet" placeholder="請選擇工作表" style="width: 300px; margin-top: 10px;" @change="loadFileColumns">
-          <el-option
-            v-for="sheet in sheetList"
-            :key="sheet"
-            :label="sheet"
-            :value="sheet"
-          />
-        </el-select>
       </div>
       
       <!-- 分析區塊 -->
@@ -340,7 +354,17 @@
             <p><strong>最小值：</strong>{{ columnStats.min || 'N/A' }}</p>
             <p><strong>最大值：</strong>{{ columnStats.max || 'N/A' }}</p>
           </div>
-          <canvas id="statsChart" style="width: 100%; height: 400px;"></canvas>
+          <div class="chart-with-export">
+            <canvas id="statsChart" style="width: 100%; height: 400px;"></canvas>
+            <el-button 
+              type="primary" 
+              class="export-btn"
+              @click="showExportDialog('statsChart', '單欄位統計分析', columnStats)"
+              icon="Download"
+            >
+              📊 導出圖表
+            </el-button>
+          </div>
         </div>
 
         <div v-if="multiSubjectStats" class="stats-card">
@@ -350,7 +374,17 @@
             <p><strong>科目數量：</strong>{{ multiSubjectStats.subjects.length }} 個</p>
             <p><strong>分析科目：</strong>{{ multiSubjectStats.subjects.join(', ') }}</p>
           </div>
-          <canvas id="multiSubjectChart" style="width: 100%; height: 400px;"></canvas>
+          <div class="chart-with-export">
+            <canvas id="multiSubjectChart" style="width: 100%; height: 400px;"></canvas>
+            <el-button 
+              type="primary" 
+              class="export-btn"
+              @click="showExportDialog('multiSubjectChart', '多科目分年平均分析', multiSubjectStats)"
+              icon="Download"
+            >
+              📊 導出圖表
+            </el-button>
+          </div>
         </div>
 
         <div v-if="yearlyAdmissionStats" class="stats-card">
@@ -375,7 +409,17 @@
               （{{ Math.min(...yearlyAdmissionStats.total_counts) }}人）
             </p>
           </div>
-          <canvas id="yearlyAdmissionChart" style="width: 100%; height: 400px;"></canvas>
+          <div class="chart-with-export">
+            <canvas id="yearlyAdmissionChart" style="width: 100%; height: 400px;"></canvas>
+            <el-button 
+              type="primary" 
+              class="export-btn"
+              @click="showExportDialog('yearlyAdmissionChart', '每年入學生數量分析', yearlyAdmissionStats)"
+              icon="Download"
+            >
+              📊 導出圖表
+            </el-button>
+          </div>
           
           <el-divider>詳細數據</el-divider>
           <el-table 
@@ -435,7 +479,17 @@
               最低入學年份：{{ schoolSourceStats.summary.low_year }}（{{ schoolSourceStats.summary.low_count }}人）
             </p>
           </div>
-          <canvas id="schoolSourceChart" style="width: 100%; height: 400px;"></canvas>
+          <div class="chart-with-export">
+            <canvas id="schoolSourceChart" style="width: 100%; height: 400px;"></canvas>
+            <el-button 
+              type="primary" 
+              class="export-btn"
+              @click="showExportDialog('schoolSourceChart', '入學生學校來源分析', schoolSourceStats)"
+              icon="Download"
+            >
+              📊 導出圖表
+            </el-button>
+          </div>
           
           <el-divider>各年度學校類型分布詳細數據</el-divider>
           <el-table 
@@ -505,7 +559,17 @@
               最低入學年份：{{ admissionMethodStats.summary.low_year }}（{{ admissionMethodStats.summary.low_count }}人）
             </p>
           </div>
-          <canvas id="admissionMethodChart" style="width: 100%; height: 400px;"></canvas>
+          <div class="chart-with-export">
+            <canvas id="admissionMethodChart" style="width: 100%; height: 400px;"></canvas>
+            <el-button 
+              type="primary" 
+              class="export-btn"
+              @click="showExportDialog('admissionMethodChart', '入學生入學管道分析', admissionMethodStats)"
+              icon="Download"
+            >
+              📊 導出圖表
+            </el-button>
+          </div>
           
           <el-divider>各年度入學管道分布詳細數據</el-divider>
           <el-table 
@@ -571,7 +635,17 @@
             <p><strong>總人數：</strong>{{ geoStats.total_students }} 人</p>
             <p><strong>說明：</strong>圖表顯示各年度不同地區的入學人數分布，橫軸為年度，縱軸為人數</p>
           </div>
-          <div id="geoChart" style="width: 100%; height: 400px;"></div>
+          <div class="chart-with-export">
+            <div id="geoChart" style="width: 100%; height: 400px;"></div>
+            <el-button 
+              type="primary" 
+              class="export-btn"
+              @click="showEChartsExportDialog('geoChart', '地理區域分布統計', geoStats)"
+              icon="Download"
+            >
+              📊 導出圖表
+            </el-button>
+          </div>
           
           <el-divider>地區縣市人數詳細分析</el-divider>
           <div class="stats-summary">
@@ -581,7 +655,17 @@
           <el-tabs type="border-card" @tab-click="handleTabChange">
             <el-tab-pane label="北台灣縣市分析">
               <div class="chart-container">
-                <div id="geoChart-北台灣" style="width: 100%; height: 400px;"></div>
+                <div class="chart-with-export">
+                  <div id="geoChart-北台灣" style="width: 100%; height: 400px;"></div>
+                  <el-button 
+                    type="primary" 
+                    class="export-btn"
+                    @click="showEChartsExportDialog('geoChart-北台灣', '北台灣縣市分析', geoStats)"
+                    icon="Download"
+                  >
+                    📊 導出圖表
+                  </el-button>
+                </div>
               </div>
               <div class="region-data-table" v-if="geoStats.detailed && geoStats.detailed['北台灣']">
                 <h4>北台灣各縣市學生統計表</h4>
@@ -599,7 +683,17 @@
             </el-tab-pane>
             <el-tab-pane label="中台灣縣市分析">
               <div class="chart-container">
-                <div id="geoChart-中台灣" style="width: 100%; height: 400px;"></div>
+                <div class="chart-with-export">
+                  <div id="geoChart-中台灣" style="width: 100%; height: 400px;"></div>
+                  <el-button 
+                    type="primary" 
+                    class="export-btn"
+                    @click="showEChartsExportDialog('geoChart-中台灣', '中台灣縣市分析', geoStats)"
+                    icon="Download"
+                  >
+                    📊 導出圖表
+                  </el-button>
+                </div>
               </div>
               <div class="region-data-table" v-if="geoStats.detailed && geoStats.detailed['中台灣']">
                 <h4>中台灣各縣市學生統計表</h4>
@@ -617,7 +711,17 @@
             </el-tab-pane>
             <el-tab-pane label="南台灣縣市分析">
               <div class="chart-container">
-                <div id="geoChart-南台灣" style="width: 100%; height: 400px;"></div>
+                <div class="chart-with-export">
+                  <div id="geoChart-南台灣" style="width: 100%; height: 400px;"></div>
+                  <el-button 
+                    type="primary" 
+                    class="export-btn"
+                    @click="showEChartsExportDialog('geoChart-南台灣', '南台灣縣市分析', geoStats)"
+                    icon="Download"
+                  >
+                    📊 導出圖表
+                  </el-button>
+                </div>
               </div>
               <div class="region-data-table" v-if="geoStats.detailed && geoStats.detailed['南台灣']">
                 <h4>南台灣各縣市學生統計表</h4>
@@ -635,7 +739,17 @@
             </el-tab-pane>
             <el-tab-pane label="東台灣縣市分析">
               <div class="chart-container">
-                <div id="geoChart-東台灣" style="width: 100%; height: 400px;"></div>
+                <div class="chart-with-export">
+                  <div id="geoChart-東台灣" style="width: 100%; height: 400px;"></div>
+                  <el-button 
+                    type="primary" 
+                    class="export-btn"
+                    @click="showEChartsExportDialog('geoChart-東台灣', '東台灣縣市分析', geoStats)"
+                    icon="Download"
+                  >
+                    📊 導出圖表
+                  </el-button>
+                </div>
               </div>
               <div class="region-data-table" v-if="geoStats.detailed && geoStats.detailed['東台灣']">
                 <h4>東台灣各縣市學生統計表</h4>
@@ -669,6 +783,57 @@
       </div>
     </div>
   </div>
+
+  <!-- 導出選項對話框 -->
+  <el-dialog
+    v-model="exportDialogVisible"
+    title="選擇導出格式"
+    width="500px"
+    align-center
+  >
+    <div class="export-options">
+      <h4>📊 {{ currentExportTitle }}</h4>
+      <p>請選擇要導出的格式：</p>
+      
+      <div class="format-grid">
+        <!-- 圖片格式 -->
+        <div class="format-section">
+          <h5>🖼️ 圖片格式</h5>
+          <el-button @click="exportInFormat('png')" type="primary" plain>
+            PNG (高品質)
+          </el-button>
+          <el-button @click="exportInFormat('jpeg')" type="primary" plain>
+            JPEG (小檔案)
+          </el-button>
+          <el-button @click="exportInFormat('svg')" type="primary" plain>
+            SVG (向量圖)
+          </el-button>
+        </div>
+        
+        <!-- 文件格式 -->
+        <div class="format-section">
+          <h5>📄 文件格式</h5>
+          <el-button @click="exportInFormat('pdf')" type="success" plain>
+            PDF (列印報告)
+          </el-button>
+          <el-button @click="exportInFormat('pdf-advanced')" type="success">
+            PDF (高級版)
+          </el-button>
+        </div>
+        
+        <!-- 數據格式 -->
+        <div class="format-section">
+          <h5>📊 數據格式</h5>
+          <el-button @click="exportInFormat('csv')" type="warning" plain>
+            CSV (數據表)
+          </el-button>
+          <el-button @click="exportInFormat('json')" type="warning" plain>
+            JSON (結構化)
+          </el-button>
+        </div>
+      </div>
+    </div>
+  </el-dialog>
 </template>
 
 <script setup>
@@ -685,6 +850,13 @@ const router = useRouter()
 const currentTime = ref('')
 const currentUser = ref('管理者')
 
+// 導出對話框相關
+const exportDialogVisible = ref(false)
+const currentExportTitle = ref('')
+const currentChartId = ref('')
+const currentChartType = ref('') // 'canvas' 或 'echarts'
+const currentChartData = ref(null)
+
 // 更新時間
 const updateTime = () => {
   const now = new Date()
@@ -697,10 +869,8 @@ const handleLogout = () => {
 }
 
 // 響應式數據
-const fileList = ref([])
-const selectedFile = ref('')
-const sheetList = ref([])
-const selectedSheet = ref('')
+const databaseTables = ref([])
+const selectedTable = ref('')
 const columns = ref([])
 const selectedColumn = ref('')
 const selectedSubjects = ref([])
@@ -802,7 +972,50 @@ const loadFileList = async () => {
   }
 }
 
-// 載入工作表列表
+// 載入資料庫表格列表
+const loadDatabaseTables = async () => {
+  try {
+    const response = await axios.get('http://localhost:5000/api/database_tables')
+    databaseTables.value = response.data.tables
+  } catch (error) {
+    console.error('載入資料庫表格失敗:', error)
+    ElMessage.error('載入資料庫表格失敗')
+  }
+}
+
+// 載入表格欄位
+const loadTableColumns = async () => {
+  if (!selectedTable.value) return
+  
+  try {
+    const response = await axios.post('http://localhost:5000/api/table_columns', {
+      table_name: selectedTable.value
+    })
+    columns.value = response.data.columns
+    
+    // 清空之前的選擇
+    selectedColumn.value = ''
+    selectedSubjects.value = []
+    yearCol.value = ''
+    yearlyAdmissionYearCol.value = ''
+    schoolSourceYearCol.value = ''
+    schoolNameCol.value = ''
+    admissionMethodYearCol.value = ''
+    admissionMethodCol.value = ''
+    geoYearCol.value = ''
+    geoRegionCol.value = ''
+    genderCol.value = ''
+    
+    // 自動選擇合適的欄位
+    autoSelectColumns()
+    
+  } catch (error) {
+    console.error('載入表格欄位失敗:', error)
+    ElMessage.error('載入表格欄位失敗')
+  }
+}
+
+// 載入工作表列表（保留原有功能，但現在主要使用資料庫）
 const loadFileSheets = async () => {
   if (!selectedFile.value) return
   
@@ -840,57 +1053,136 @@ const loadFileColumns = async () => {
 const autoSelectColumns = () => {
   if (columns.value.length === 0) return
   
-  // 自動選擇年份欄位
-  const yearColumns = columns.value.filter(col => 
-    col.includes('年') || col.includes('學年') || col.includes('入學年')
-  )
+  console.log('可用欄位:', columns.value)
+  
+  // 自動選擇年份欄位（更完整的匹配）
+  const yearColumns = columns.value.filter(col => {
+    const colLower = col.toLowerCase()
+    return col.includes('年') || 
+           col.includes('學年') || 
+           col.includes('入學年') ||
+           colLower.includes('year') ||
+           col.includes('年度') ||
+           col.includes('學年度')
+  })
   if (yearColumns.length > 0) {
     yearCol.value = yearColumns[0]
     yearlyAdmissionYearCol.value = yearColumns[0]
     schoolSourceYearCol.value = yearColumns[0]
     admissionMethodYearCol.value = yearColumns[0]
     geoYearCol.value = yearColumns[0]
+    console.log('自動選擇年份欄位:', yearColumns[0])
   }
   
-  // 自動選擇學校欄位
-  const schoolColumns = columns.value.filter(col => 
-    col.includes('學校') || col.includes('高中') || col.includes('高職')
-  )
+  // 自動選擇學校欄位（更完整的匹配）
+  const schoolColumns = columns.value.filter(col => {
+    const colLower = col.toLowerCase()
+    return col.includes('學校') || 
+           col.includes('高中') || 
+           col.includes('高職') ||
+           col.includes('國中') ||
+           col.includes('畢業學校') ||
+           colLower.includes('school') ||
+           col.includes('校名')
+  })
   if (schoolColumns.length > 0) {
     schoolNameCol.value = schoolColumns[0]
+    console.log('自動選擇學校欄位:', schoolColumns[0])
   }
   
   // 自動選擇入學管道欄位
-  const admissionColumns = columns.value.filter(col => 
-    col.includes('管道') || col.includes('入學方式') || col.includes('類別')
-  )
+  const admissionColumns = columns.value.filter(col => {
+    const colLower = col.toLowerCase()
+    return col.includes('管道') || 
+           col.includes('入學方式') || 
+           col.includes('類別') ||
+           col.includes('入學管道') ||
+           col.includes('錄取方式') ||
+           colLower.includes('admission') ||
+           col.includes('招生方式')
+  })
   if (admissionColumns.length > 0) {
     admissionMethodCol.value = admissionColumns[0]
+    console.log('自動選擇入學管道欄位:', admissionColumns[0])
   }
   
   // 自動選擇性別欄位
-  const genderColumns = columns.value.filter(col => 
-    col.includes('性別') || col.includes('gender') || col.includes('sex')
-  )
+  const genderColumns = columns.value.filter(col => {
+    const colLower = col.toLowerCase()
+    return col.includes('性別') || 
+           colLower.includes('gender') || 
+           colLower.includes('sex') ||
+           col.includes('男女')
+  })
   if (genderColumns.length > 0) {
     genderCol.value = genderColumns[0]
+    console.log('自動選擇性別欄位:', genderColumns[0])
   }
   
   // 自動選擇地區欄位
-  const regionColumns = columns.value.filter(col => 
-    col.includes('地區') || col.includes('縣市') || col.includes('城市') || col.includes('地理')
-  )
+  const regionColumns = columns.value.filter(col => {
+    const colLower = col.toLowerCase()
+    return col.includes('地區') || 
+           col.includes('縣市') || 
+           col.includes('城市') || 
+           col.includes('地理') ||
+           col.includes('縣') ||
+           col.includes('市') ||
+           col.includes('戶籍') ||
+           colLower.includes('region') ||
+           colLower.includes('city') ||
+           col.includes('居住地')
+  })
   if (regionColumns.length > 0) {
     geoRegionCol.value = regionColumns[0]
+    console.log('自動選擇地區欄位:', regionColumns[0])
+  }
+  
+  // 自動選擇科目欄位（用於多科目分析）
+  const subjectColumns = columns.value.filter(col => {
+    return col.includes('國文') || 
+           col.includes('英文') || 
+           col.includes('數學') ||
+           col.includes('物理') ||
+           col.includes('化學') ||
+           col.includes('生物') ||
+           col.includes('歷史') ||
+           col.includes('地理') ||
+           col.includes('公民') ||
+           col.includes('成績') ||
+           col.includes('分數') ||
+           /\d+分/.test(col) // 匹配包含"分"的數字欄位
+  })
+  if (subjectColumns.length > 0) {
+    // 預設選擇前3個科目
+    selectedSubjects.value = subjectColumns.slice(0, 3)
+    console.log('自動選擇科目欄位:', selectedSubjects.value)
+  }
+  
+  // 自動選擇第一個數值型欄位作為統計欄位
+  const numericColumns = columns.value.filter(col => {
+    return col.includes('成績') || 
+           col.includes('分數') || 
+           col.includes('分') ||
+           col.includes('總分') ||
+           /\d/.test(col) // 包含數字的欄位
+  })
+  if (numericColumns.length > 0 && !selectedColumn.value) {
+    selectedColumn.value = numericColumns[0]
+    console.log('自動選擇統計欄位:', numericColumns[0])
   }
 }
 
 // 分析方法
 const getColumnStats = async () => {
+  if (!selectedTable.value || !selectedColumn.value) {
+    ElMessage.warning('請先選擇資料表格和欄位')
+    return
+  }
+  
   try {
     const response = await axios.post('http://localhost:5000/api/column_stats', {
-      filename: selectedFile.value,
-      sheet: selectedSheet.value,
+      table_name: selectedTable.value,
       column: selectedColumn.value
     })
     columnStats.value = response.data
@@ -904,10 +1196,14 @@ const getColumnStats = async () => {
 }
 
 const getMultiSubjectStats = async () => {
+  if (!selectedTable.value || !selectedSubjects.value.length || !yearCol.value) {
+    ElMessage.warning('請先選擇資料表格、科目和年度欄位')
+    return
+  }
+  
   try {
     const response = await axios.post('http://localhost:5000/api/multi_subject_stats', {
-      filename: selectedFile.value,
-      sheet: selectedSheet.value,
+      table_name: selectedTable.value,
       subjects: selectedSubjects.value,
       year_col: yearCol.value
     })
@@ -921,11 +1217,16 @@ const getMultiSubjectStats = async () => {
   }
 }
 
+
 const getYearlyAdmissionStats = async () => {
+  if (!selectedTable.value || !yearlyAdmissionYearCol.value) {
+    ElMessage.warning('請先選擇資料表格和年度欄位')
+    return
+  }
+  
   try {
     const response = await axios.post('http://localhost:5000/api/yearly_admission_stats', {
-      filename: selectedFile.value,
-      sheet: selectedSheet.value,
+      table_name: selectedTable.value,
       year_col: yearlyAdmissionYearCol.value,
       gender_col: genderCol.value
     })
@@ -940,10 +1241,14 @@ const getYearlyAdmissionStats = async () => {
 }
 
 const getSchoolSourceStats = async () => {
+  if (!selectedTable.value || !schoolSourceYearCol.value || !schoolNameCol.value) {
+    ElMessage.warning('請先選擇資料表格、年度欄位和學校欄位')
+    return
+  }
+  
   try {
     const response = await axios.post('http://localhost:5000/api/school_source_stats', {
-      filename: selectedFile.value,
-      sheet: selectedSheet.value,
+      table_name: selectedTable.value,
       year_col: schoolSourceYearCol.value,
       school_col: schoolNameCol.value
     })
@@ -957,11 +1262,16 @@ const getSchoolSourceStats = async () => {
   }
 }
 
+
 const getAdmissionMethodStats = async () => {
+  if (!selectedTable.value || !admissionMethodYearCol.value || !admissionMethodCol.value) {
+    ElMessage.warning('請先選擇資料表格、年度欄位和入學管道欄位')
+    return
+  }
+  
   try {
     const response = await axios.post('http://localhost:5000/api/admission_method_stats', {
-      filename: selectedFile.value,
-      sheet: selectedSheet.value,
+      table_name: selectedTable.value,
       year_col: admissionMethodYearCol.value,
       method_col: admissionMethodCol.value
     })
@@ -975,12 +1285,17 @@ const getAdmissionMethodStats = async () => {
   }
 }
 
+
 // 地理區域分析
 const getGeographicStats = async () => {
+  if (!selectedTable.value || !geoYearCol.value || !geoRegionCol.value) {
+    ElMessage.warning('請先選擇資料表格、年度欄位和地區欄位')
+    return
+  }
+  
   try {
     const response = await axios.post('http://localhost:5000/api/geographic_stats', {
-      filename: selectedFile.value,
-      sheet: selectedSheet.value,
+      table_name: selectedTable.value,
       year_col: geoYearCol.value,
       region_col: geoRegionCol.value,
       get_city_details: true
@@ -1454,6 +1769,653 @@ const renderAdmissionMethodChart = (data) => {
   })
 }
 
+// 顯示導出對話框
+const showExportDialog = (chartId, title, data) => {
+  currentChartId.value = chartId
+  currentExportTitle.value = title
+  currentChartType.value = 'canvas'
+  currentChartData.value = data
+  exportDialogVisible.value = true
+}
+
+const showEChartsExportDialog = (chartId, title, data) => {
+  currentChartId.value = chartId
+  currentExportTitle.value = title
+  currentChartType.value = 'echarts'
+  currentChartData.value = data
+  exportDialogVisible.value = true
+}
+
+// 根據格式導出
+const exportInFormat = (format) => {
+  exportDialogVisible.value = false
+  
+  switch (format) {
+    case 'png':
+      exportAsImage('png')
+      break
+    case 'jpeg':
+      exportAsImage('jpeg')
+      break
+    case 'svg':
+      exportAsSVG()
+      break
+    case 'pdf':
+      exportAsPDF()
+      break
+    case 'pdf-advanced':
+      exportAsPDFAdvanced()
+      break
+    case 'csv':
+      exportAsCSV()
+      break
+    case 'json':
+      exportAsJSON()
+      break
+    default:
+      ElMessage.error('不支援的導出格式')
+  }
+}
+
+// 導出為圖片
+const exportAsImage = (format) => {
+  if (currentChartType.value === 'canvas') {
+    exportCanvasAsImage(format)
+  } else if (currentChartType.value === 'echarts') {
+    exportEChartsAsImage(format)
+  }
+}
+
+const exportCanvasAsImage = (format) => {
+  const canvas = document.getElementById(currentChartId.value)
+  if (!canvas) {
+    ElMessage.error('找不到圖表，請先生成圖表')
+    return
+  }
+  
+  try {
+    let dataURL
+    
+    if (format === 'jpeg') {
+      // 為JPEG格式創建白色背景
+      const tempCanvas = document.createElement('canvas')
+      const tempCtx = tempCanvas.getContext('2d')
+      tempCanvas.width = canvas.width
+      tempCanvas.height = canvas.height
+      
+      // 填充白色背景
+      tempCtx.fillStyle = '#FFFFFF'
+      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height)
+      
+      // 繪製原圖表
+      tempCtx.drawImage(canvas, 0, 0)
+      
+      dataURL = tempCanvas.toDataURL('image/jpeg', 0.9)
+    } else {
+      const mimeType = 'image/png'
+      dataURL = canvas.toDataURL(mimeType, 1.0)
+    }
+    
+    const link = document.createElement('a')
+    link.download = `${currentExportTitle.value}_${new Date().toISOString().slice(0, 10)}.${format}`
+    link.href = dataURL
+    
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    ElMessage.success(`圖表已導出為 ${format.toUpperCase()}`)
+  } catch (error) {
+    console.error('圖表導出失敗:', error)
+    ElMessage.error('圖表導出失敗，請重試')
+  }
+}
+
+const exportEChartsAsImage = (format) => {
+  const chartInstance = getEChartsInstance(currentChartId.value)
+  if (!chartInstance) {
+    ElMessage.error('找不到圖表，請先生成圖表')
+    return
+  }
+  
+  try {
+    const backgroundColor = format === 'jpeg' ? '#FFFFFF' : '#fff'
+    const type = format === 'jpeg' ? 'jpeg' : 'png'
+    
+    const base64 = chartInstance.getDataURL({
+      type: type,
+      pixelRatio: 2,
+      backgroundColor: backgroundColor
+    })
+    
+    const link = document.createElement('a')
+    link.download = `${currentExportTitle.value}_${new Date().toISOString().slice(0, 10)}.${format}`
+    link.href = base64
+    
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    ElMessage.success(`圖表已導出為 ${format.toUpperCase()}`)
+  } catch (error) {
+    console.error('圖表導出失敗:', error)
+    ElMessage.error('圖表導出失敗，請重試')
+  }
+}
+
+// 導出為SVG (僅支援ECharts)
+const exportAsSVG = () => {
+  if (currentChartType.value !== 'echarts') {
+    ElMessage.warning('SVG 格式僅支援地理區域圖表')
+    return
+  }
+  
+  const chartInstance = getEChartsInstance(currentChartId.value)
+  if (!chartInstance) {
+    ElMessage.error('找不到圖表，請先生成圖表')
+    return
+  }
+  
+  try {
+    const svgStr = chartInstance.renderToSVGString()
+    const blob = new Blob([svgStr], { type: 'image/svg+xml' })
+    const url = URL.createObjectURL(blob)
+    
+    const link = document.createElement('a')
+    link.download = `${currentExportTitle.value}_${new Date().toISOString().slice(0, 10)}.svg`
+    link.href = url
+    
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    URL.revokeObjectURL(url)
+    ElMessage.success('圖表已導出為 SVG')
+  } catch (error) {
+    console.error('SVG導出失敗:', error)
+    ElMessage.error('SVG導出失敗，請重試')
+  }
+}
+
+// 導出為PDF
+const exportAsPDF = () => {
+  try {
+    // 創建一個包含圖表的完整HTML頁面
+    const chartContainer = createPDFContent()
+    
+    // 創建新窗口
+    const printWindow = window.open('', '_blank')
+    if (!printWindow) {
+      ElMessage.error('無法打開新窗口，請檢查瀏覽器設定')
+      return
+    }
+    
+    // 寫入HTML內容
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${currentExportTitle.value}</title>
+        <style>
+          @page {
+            size: A4;
+            margin: 20mm;
+          }
+          body {
+            font-family: 'Microsoft JhengHei', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: white;
+          }
+          h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 24px;
+          }
+          .chart-container {
+            text-align: center;
+            margin: 20px 0;
+          }
+          .chart-image {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          }
+          .stats-info {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #409eff;
+          }
+          .stats-info h3 {
+            margin: 0 0 10px 0;
+            color: #409eff;
+          }
+          .stats-item {
+            margin: 5px 0;
+            color: #666;
+          }
+          .footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 12px;
+            color: #999;
+            border-top: 1px solid #eee;
+            padding-top: 10px;
+          }
+          @media print {
+            body { margin: 0; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <h1>📊 ${currentExportTitle.value}</h1>
+        <div class="chart-container">
+          ${chartContainer}
+        </div>
+        ${generateStatsInfo()}
+        <div class="footer">
+          <p>報告生成時間：${new Date().toLocaleString('zh-TW')}</p>
+          <p>學生資料分析系統</p>
+        </div>
+      </body>
+      </html>
+    `)
+    
+    printWindow.document.close()
+    
+    // 等待內容載入完成後列印
+    setTimeout(() => {
+      printWindow.focus()
+      printWindow.print()
+      printWindow.close()
+    }, 1000)
+    
+    ElMessage.success('PDF列印對話框已開啟，請選擇"另存為PDF"')
+  } catch (error) {
+    console.error('PDF導出失敗:', error)
+    ElMessage.error('PDF導出失敗，請重試')
+  }
+}
+
+const createPDFContent = () => {
+  if (currentChartType.value === 'canvas') {
+    const canvas = document.getElementById(currentChartId.value)
+    if (canvas) {
+      // 為PDF創建白色背景的圖片
+      const tempCanvas = document.createElement('canvas')
+      const tempCtx = tempCanvas.getContext('2d')
+      tempCanvas.width = canvas.width
+      tempCanvas.height = canvas.height
+      
+      // 填充白色背景
+      tempCtx.fillStyle = '#FFFFFF'
+      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height)
+      
+      // 繪製原圖表
+      tempCtx.drawImage(canvas, 0, 0)
+      
+      const dataURL = tempCanvas.toDataURL('image/png', 1.0)
+      return `<img src="${dataURL}" class="chart-image" alt="${currentExportTitle.value}" />`
+    }
+  } else if (currentChartType.value === 'echarts') {
+    const chartInstance = getEChartsInstance(currentChartId.value)
+    if (chartInstance) {
+      const dataURL = chartInstance.getDataURL({
+        type: 'png',
+        pixelRatio: 2,
+        backgroundColor: '#FFFFFF'
+      })
+      return `<img src="${dataURL}" class="chart-image" alt="${currentExportTitle.value}" />`
+    }
+  }
+  return '<p>無法載入圖表</p>'
+}
+
+const generateStatsInfo = () => {
+  if (!currentChartData.value) return ''
+  
+  const data = currentChartData.value
+  let statsHTML = '<div class="stats-info"><h3>📈 統計資訊</h3>'
+  
+  if (data.column_name) {
+    // 單欄位統計
+    statsHTML += `
+      <div class="stats-item"><strong>欄位名稱：</strong>${data.column_name}</div>
+      <div class="stats-item"><strong>總計筆數：</strong>${data.count} 筆</div>
+      <div class="stats-item"><strong>平均值：</strong>${data.mean?.toFixed(2) || 'N/A'}</div>
+      <div class="stats-item"><strong>標準差：</strong>${data.std?.toFixed(2) || 'N/A'}</div>
+      <div class="stats-item"><strong>最小值：</strong>${data.min || 'N/A'}</div>
+      <div class="stats-item"><strong>最大值：</strong>${data.max || 'N/A'}</div>
+    `
+  } else if (data.year_range) {
+    // 時間範圍統計
+    statsHTML += `
+      <div class="stats-item"><strong>分析期間：</strong>${data.year_range}</div>
+      <div class="stats-item"><strong>總人數：</strong>${data.total_students || 'N/A'} 人</div>
+    `
+    if (data.subjects) {
+      statsHTML += `<div class="stats-item"><strong>分析科目：</strong>${data.subjects.join(', ')}</div>`
+    }
+  }
+  
+  statsHTML += '</div>'
+  return statsHTML
+}
+
+// 高級PDF導出 - 使用現代瀏覽器API
+const exportAsPDFAdvanced = async () => {
+  try {
+    // 檢查瀏覽器支援
+    if (!window.jsPDF && !window.html2canvas) {
+      ElMessage.warning('高級PDF功能需要額外庫支援，將使用基本PDF功能')
+      exportAsPDF()
+      return
+    }
+    
+    // 創建包含圖表的容器
+    const container = document.createElement('div')
+    container.style.cssText = `
+      width: 800px;
+      padding: 40px;
+      background: white;
+      font-family: 'Microsoft JhengHei', Arial, sans-serif;
+      position: absolute;
+      left: -9999px;
+      top: 0;
+    `
+    
+    // 添加標題
+    const title = document.createElement('h1')
+    title.textContent = currentExportTitle.value
+    title.style.cssText = `
+      text-align: center;
+      color: #2c3e50;
+      margin-bottom: 30px;
+      font-size: 28px;
+    `
+    container.appendChild(title)
+    
+    // 添加圖表
+    const chartDiv = document.createElement('div')
+    chartDiv.style.cssText = 'text-align: center; margin: 30px 0;'
+    
+    const chartImg = document.createElement('img')
+    if (currentChartType.value === 'canvas') {
+      const canvas = document.getElementById(currentChartId.value)
+      if (canvas) {
+        // 創建白色背景版本
+        const tempCanvas = document.createElement('canvas')
+        const tempCtx = tempCanvas.getContext('2d')
+        tempCanvas.width = canvas.width
+        tempCanvas.height = canvas.height
+        
+        tempCtx.fillStyle = '#FFFFFF'
+        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height)
+        tempCtx.drawImage(canvas, 0, 0)
+        
+        chartImg.src = tempCanvas.toDataURL('image/png', 1.0)
+      }
+    } else if (currentChartType.value === 'echarts') {
+      const chartInstance = getEChartsInstance(currentChartId.value)
+      if (chartInstance) {
+        chartImg.src = chartInstance.getDataURL({
+          type: 'png',
+          pixelRatio: 2,
+          backgroundColor: '#FFFFFF'
+        })
+      }
+    }
+    
+    chartImg.style.cssText = 'max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 8px;'
+    chartDiv.appendChild(chartImg)
+    container.appendChild(chartDiv)
+    
+    // 添加統計資訊
+    if (currentChartData.value) {
+      const statsDiv = document.createElement('div')
+      statsDiv.innerHTML = generateStatsInfo()
+      container.appendChild(statsDiv)
+    }
+    
+    // 添加頁腳
+    const footer = document.createElement('div')
+    footer.innerHTML = `
+      <div style="margin-top: 40px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 20px;">
+        <p>報告生成時間：${new Date().toLocaleString('zh-TW')}</p>
+        <p>學生資料分析系統</p>
+      </div>
+    `
+    container.appendChild(footer)
+    
+    // 添加到DOM中
+    document.body.appendChild(container)
+    
+    // 等待圖片載入
+    await new Promise(resolve => {
+      if (chartImg.complete) {
+        resolve()
+      } else {
+        chartImg.onload = resolve
+        chartImg.onerror = resolve
+      }
+    })
+    
+    // 使用瀏覽器列印API
+    const printFrame = document.createElement('iframe')
+    printFrame.style.cssText = 'position: absolute; left: -9999px; top: 0; width: 1px; height: 1px;'
+    document.body.appendChild(printFrame)
+    
+    const frameDoc = printFrame.contentDocument || printFrame.contentWindow.document
+    frameDoc.open()
+    frameDoc.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${currentExportTitle.value}</title>
+        <style>
+          @page { size: A4; margin: 20mm; }
+          body { margin: 0; padding: 0; font-family: 'Microsoft JhengHei', Arial, sans-serif; }
+          @media print {
+            body { background: white !important; }
+          }
+        </style>
+      </head>
+      <body>
+        ${container.innerHTML}
+      </body>
+      </html>
+    `)
+    frameDoc.close()
+    
+    // 等待載入完成後列印
+    setTimeout(() => {
+      printFrame.contentWindow.focus()
+      printFrame.contentWindow.print()
+      
+      // 清理
+      setTimeout(() => {
+        document.body.removeChild(container)
+        document.body.removeChild(printFrame)
+      }, 1000)
+    }, 500)
+    
+    ElMessage.success('高級PDF列印對話框已開啟')
+    
+  } catch (error) {
+    console.error('高級PDF導出失敗:', error)
+    ElMessage.error('高級PDF導出失敗，將使用基本版本')
+    exportAsPDF()
+  }
+}
+
+// 導出為CSV
+const exportAsCSV = () => {
+  if (!currentChartData.value) {
+    ElMessage.error('無可用數據')
+    return
+  }
+  
+  try {
+    let csvContent = ''
+    const data = currentChartData.value
+    
+    // 根據不同的圖表類型生成不同的CSV格式
+    if (data.column_name) {
+      // 單欄位統計
+      csvContent = '統計項目,數值\n'
+      csvContent += `欄位名稱,${data.column_name}\n`
+      csvContent += `總計筆數,${data.count}\n`
+      csvContent += `平均值,${data.mean || 'N/A'}\n`
+      csvContent += `標準差,${data.std || 'N/A'}\n`
+      csvContent += `最小值,${data.min || 'N/A'}\n`
+      csvContent += `最大值,${data.max || 'N/A'}\n`
+    } else if (data.subjects) {
+      // 多科目分析
+      csvContent = '年份,' + data.subjects.join(',') + '\n'
+      data.years.forEach((year, index) => {
+        const row = [year]
+        data.subjects.forEach(subject => {
+          const yearData = data.yearly_data.find(d => d.year === year)
+          row.push(yearData ? yearData[subject] || 0 : 0)
+        })
+        csvContent += row.join(',') + '\n'
+      })
+    } else if (data.years && data.total_counts) {
+      // 年度統計
+      csvContent = '年份,總人數\n'
+      data.years.forEach((year, index) => {
+        csvContent += `${year},${data.total_counts[index]}\n`
+      })
+    }
+    
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    
+    link.setAttribute('href', url)
+    link.setAttribute('download', `${currentExportTitle.value}_${new Date().toISOString().slice(0, 10)}.csv`)
+    link.style.visibility = 'hidden'
+    
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    URL.revokeObjectURL(url)
+    ElMessage.success('數據已導出為 CSV')
+  } catch (error) {
+    console.error('CSV導出失敗:', error)
+    ElMessage.error('CSV導出失敗，請重試')
+  }
+}
+
+// 導出為JSON
+const exportAsJSON = () => {
+  if (!currentChartData.value) {
+    ElMessage.error('無可用數據')
+    return
+  }
+  
+  try {
+    const jsonData = {
+      title: currentExportTitle.value,
+      exportDate: new Date().toISOString(),
+      data: currentChartData.value
+    }
+    
+    const jsonStr = JSON.stringify(jsonData, null, 2)
+    const blob = new Blob([jsonStr], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    
+    const link = document.createElement('a')
+    link.download = `${currentExportTitle.value}_${new Date().toISOString().slice(0, 10)}.json`
+    link.href = url
+    
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    URL.revokeObjectURL(url)
+    ElMessage.success('數據已導出為 JSON')
+  } catch (error) {
+    console.error('JSON導出失敗:', error)
+    ElMessage.error('JSON導出失敗，請重試')
+  }
+}
+
+// 圖表導出功能
+const exportChart = (canvasId, chartTitle) => {
+  const canvas = document.getElementById(canvasId)
+  if (!canvas) {
+    ElMessage.error('找不到圖表，請先生成圖表')
+    return
+  }
+  
+  try {
+    // 創建下載連結
+    const link = document.createElement('a')
+    link.download = `${chartTitle}_${new Date().toISOString().slice(0, 10)}.png`
+    link.href = canvas.toDataURL('image/png', 1.0)
+    
+    // 觸發下載
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    ElMessage.success(`圖表已導出: ${chartTitle}`)
+  } catch (error) {
+    console.error('圖表導出失敗:', error)
+    ElMessage.error('圖表導出失敗，請重試')
+  }
+}
+
+const exportEChart = (chartId, chartTitle) => {
+  const chartInstance = getEChartsInstance(chartId)
+  if (!chartInstance) {
+    ElMessage.error('找不到圖表，請先生成圖表')
+    return
+  }
+  
+  try {
+    // 取得圖表的base64圖片
+    const base64 = chartInstance.getDataURL({
+      type: 'png',
+      pixelRatio: 2,
+      backgroundColor: '#fff'
+    })
+    
+    // 創建下載連結
+    const link = document.createElement('a')
+    link.download = `${chartTitle}_${new Date().toISOString().slice(0, 10)}.png`
+    link.href = base64
+    
+    // 觸發下載
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    ElMessage.success(`圖表已導出: ${chartTitle}`)
+  } catch (error) {
+    console.error('圖表導出失敗:', error)
+    ElMessage.error('圖表導出失敗，請重試')
+  }
+}
+
+const getEChartsInstance = (chartId) => {
+  if (chartId === 'geoChart') {
+    return geoChartInstance
+  } else if (chartId.startsWith('geoChart-')) {
+    const region = chartId.replace('geoChart-', '')
+    return geoDetailedChartInstances[region]
+  }
+  return null
+}
+
 // 清理函數
 onBeforeUnmount(() => {
   cleanupFunctions.forEach(cleanup => cleanup())
@@ -1836,7 +2798,7 @@ const handleTabChange = (tab) => {
 
 // 初始化
 onMounted(() => {
-  loadFileList()
+  loadDatabaseTables()
   
   // 初始化時間並設置定時更新
   updateTime()
@@ -1946,6 +2908,157 @@ onMounted(() => {
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   margin-bottom: 20px;
+}
+
+/* 資料庫來源選擇 */
+.database-source-section {
+  margin-bottom: 20px;
+}
+
+.database-source-section h3 {
+  margin: 0 0 8px 0;
+  color: #2c5aa0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.database-source-section p {
+  margin: 0 0 16px 0;
+  color: #666;
+  font-size: 14px;
+}
+
+.upload-hint {
+  text-align: center;
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 2px dashed #ddd;
+}
+
+.upload-hint p {
+  margin: 0;
+  color: #666;
+  font-size: 14px;
+}
+
+.upload-hint a {
+  color: #2c5aa0;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.upload-hint a:hover {
+  text-decoration: underline;
+}
+
+/* 自動選擇欄位提示 */
+.auto-select-info {
+  margin-top: 20px;
+  padding: 16px;
+  background: #f0f8ff;
+  border-radius: 8px;
+  border-left: 4px solid #2196f3;
+}
+
+.auto-select-info h4 {
+  margin: 0 0 8px 0;
+  color: #1976d2;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.auto-select-info p {
+  margin: 0 0 12px 0;
+  color: #555;
+  font-size: 14px;
+}
+
+.auto-select-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.auto-select-item {
+  padding: 8px 12px;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #e3f2fd;
+  font-size: 14px;
+  color: #333;
+}
+
+.auto-select-item strong {
+  color: #1976d2;
+}
+
+.auto-select-note {
+  margin: 0;
+  font-size: 12px;
+  color: #666;
+  font-style: italic;
+}
+
+/* 圖表導出容器樣式 */
+.chart-with-export {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.export-btn {
+  align-self: center;
+  margin-top: 10px;
+}
+
+.export-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* 導出對話框樣式 */
+.export-options {
+  padding: 20px;
+}
+
+.export-options h4 {
+  margin: 0 0 10px 0;
+  color: #2c3e50;
+  font-size: 18px;
+}
+
+.export-options p {
+  margin: 0 0 20px 0;
+  color: #666;
+}
+
+.format-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.format-section {
+  padding: 15px;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.format-section h5 {
+  margin: 0 0 12px 0;
+  color: #409eff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.format-section .el-button {
+  margin-right: 8px;
+  margin-bottom: 8px;
 }
 
 /* 分析區塊樣式 */

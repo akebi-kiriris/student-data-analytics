@@ -4,7 +4,9 @@
       <div class="login-header">
         <h1 class="system-title">🎓 學生資料分析系統</h1>
       </div>
-      
+      <!-- @submit = v-on:submit 的縮寫，監聽表單提交事件
+          .prevent = 事件修飾符，等同於呼叫 event.preventDefault()
+          提交時避免重新載入畫面或跳轉-->
       <form @submit.prevent="handleLogin" class="login-form">
         <div class="form-group">
           <label for="username">用戶名/帳號</label>

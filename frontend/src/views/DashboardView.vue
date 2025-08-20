@@ -39,7 +39,7 @@
               </div>
             </div>
             <!-- 暫時隱藏用戶管理統計 -->
-            <div v-if="showUserManagement" class="stat-card">
+            <div v-if="showUserManagement" class="stat-card" style="display: none;">
               <div class="stat-icon">👥</div>
               <div class="stat-content">
                 <div class="stat-number">{{ stats.totalUsers }}</div>
@@ -63,21 +63,6 @@
           </div>
         </div>
 
-        <!-- 最近活動 -->
-        <div class="activity-section">
-          <div class="section-header">
-            <h3>最近活動</h3>
-            <a href="#" class="more-link">更多 →</a>
-          </div>
-          <div class="activity-list">
-            <div v-for="activity in recentActivities" :key="activity.id" class="activity-item">
-              <span class="activity-icon">{{ activity.icon }}</span>
-              <span class="activity-time">{{ activity.time }}</span>
-              <span class="activity-description">{{ activity.description }}</span>
-            </div>
-          </div>
-        </div>
-
         <!-- 快速操作 -->
         <div class="quick-actions-section">
           <h3>快速操作</h3>
@@ -90,9 +75,9 @@
               <span class="action-icon">📊</span>
               <span>快速分析</span>
             </button>
-            <button class="action-btn">
+            <button class="action-btn" disabled style="opacity: 0.6;">
               <span class="action-icon">📋</span>
-              <span>新建報告</span>
+              <span>新建報告 (開發中)</span>
             </button>
           </div>
         </div>
@@ -105,6 +90,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { authService } from '../services/auth.js'
+import axios from 'axios'
 
 const router = useRouter()
 
@@ -117,14 +103,41 @@ const currentDate = ref('')
 const showUserManagement = ref(false) // 暫時隱藏用戶管理功能
 
 const stats = ref({
-  totalData: '0',
-  totalUsers: '0',
+  totalData: '載入中...',
   totalReports: '0',
-  totalFiles: '0'
+  totalFiles: '載入中...'
 })
-const recentActivities = ref([])
 
 let timeInterval = null
+
+// 載入統計數據
+const loadStats = async () => {
+  try {
+    // 獲取資料庫表格數量
+    const tablesResponse = await axios.get('http://localhost:5000/api/database/tables')
+    if (tablesResponse.data.success) {
+      stats.value.totalFiles = tablesResponse.data.tables.length.toString()
+      
+      // 計算總數據筆數
+      let totalRows = 0
+      for (const table of tablesResponse.data.tables) {
+        try {
+          const countResponse = await axios.get(`http://localhost:5000/api/database/tables/${table.table_name}/count`)
+          if (countResponse.data.success) {
+            totalRows += countResponse.data.count
+          }
+        } catch (error) {
+          console.warn(`無法獲取表格 ${table.table_name} 的筆數:`, error)
+        }
+      }
+      stats.value.totalData = totalRows.toLocaleString()
+    }
+  } catch (error) {
+    console.error('載入統計數據失敗:', error)
+    stats.value.totalData = '無法載入'
+    stats.value.totalFiles = '無法載入'
+  }
+}
 
 // 方法
 const updateTime = () => {
@@ -157,6 +170,7 @@ onMounted(() => {
   updateTime()
   timeInterval = setInterval(updateTime, 1000)
   loadUserInfo()
+  loadStats() // 載入統計數據
 })
 
 onBeforeUnmount(() => {
@@ -256,50 +270,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-/* 側邊欄 */
-.sidebar {
-  width: 250px;
-  background-color: #263238;
-  color: white;
-  display: flex;
-  flex-direction: column;
-}
-
-.sidebar-nav {
-  flex: 1;
-  padding: 20px 0;
-}
-
-.nav-menu {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.nav-item {
-  margin-bottom: 4px;
-}
-
-.nav-icon {
-  margin-right: 12px;
-  font-size: 16px;
-}
-
-.nav-text {
-  font-size: 14px;
-}
-
-.sidebar-footer {
-  padding: 20px;
-  border-top: 1px solid #37474f;
-  text-align: center;
-}
-
-.version {
-  color: #78909c;
-  font-size: 12px;
-}
-
 /* 主內容區域 */
 .main-content {
   flex: 1;
@@ -368,66 +338,6 @@ onBeforeUnmount(() => {
 .stat-label {
   font-size: 14px;
   color: #666;
-}
-
-/* 最近活動 */
-.activity-section {
-  background: white;
-  padding: 20px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.section-header h3 {
-  margin: 0;
-  color: #212121;
-  font-size: 18px;
-}
-
-.more-link {
-  color: #1976d2;
-  text-decoration: none;
-  font-size: 14px;
-}
-
-.activity-list {
-  space-y: 12px;
-}
-
-.activity-item {
-  display: flex;
-  align-items: center;
-  padding: 12px 0;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.activity-item:last-child {
-  border-bottom: none;
-}
-
-.activity-icon {
-  margin-right: 12px;
-  font-size: 16px;
-}
-
-.activity-time {
-  margin-right: 16px;
-  color: #666;
-  font-size: 14px;
-  min-width: 140px;
-}
-
-.activity-description {
-  color: #212121;
-  font-size: 14px;
 }
 
 /* 快速操作 */
