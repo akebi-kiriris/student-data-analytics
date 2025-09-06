@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="analysis-page">
     <!-- 頂部導航欄 -->
     <header class="top-navbar">
@@ -371,8 +371,8 @@
           <el-divider>多科目分年平均分析結果</el-divider>
           <div class="stats-summary">
             <p><strong>分析期間：</strong>{{ multiSubjectStats.year_range }}</p>
-            <p><strong>科目數量：</strong>{{ multiSubjectStats.subjects.length }} 個</p>
-            <p><strong>分析科目：</strong>{{ multiSubjectStats.subjects.join(', ') }}</p>
+            <p v-if="multiSubjectStats.subjects"><strong>科目數量：</strong>{{ multiSubjectStats.subjects.length }} 個</p>
+            <p v-if="multiSubjectStats.subjects"><strong>分析科目：</strong>{{ multiSubjectStats.subjects.join(', ') }}</p>
           </div>
           <div class="chart-with-export">
             <canvas id="multiSubjectChart" style="width: 100%; height: 400px;"></canvas>
@@ -392,19 +392,19 @@
           <div class="stats-summary">
             <p><strong>分析期間：</strong>{{ yearlyAdmissionStats.year_range }}</p>
             <p><strong>總入學人數：</strong>{{ yearlyAdmissionStats.total_students }} 人</p>
-            <p v-if="yearlyAdmissionStats.has_gender">
+            <p v-if="yearlyAdmissionStats.has_gender && yearlyAdmissionStats.years && yearlyAdmissionStats.total_counts">
               最高入學年份：{{ yearlyAdmissionStats.years[yearlyAdmissionStats.total_counts.indexOf(Math.max(...yearlyAdmissionStats.total_counts))] }}
               （{{ Math.max(...yearlyAdmissionStats.total_counts) }}人）
             </p>
-            <p v-if="yearlyAdmissionStats.has_gender">
+            <p v-if="yearlyAdmissionStats.has_gender && yearlyAdmissionStats.years && yearlyAdmissionStats.total_counts">
               最低入學年份：{{ yearlyAdmissionStats.years[yearlyAdmissionStats.total_counts.indexOf(Math.min(...yearlyAdmissionStats.total_counts))] }}
               （{{ Math.min(...yearlyAdmissionStats.total_counts) }}人）
             </p>
-            <p v-if="!yearlyAdmissionStats.has_gender">
+            <p v-if="!yearlyAdmissionStats.has_gender && yearlyAdmissionStats.years && yearlyAdmissionStats.total_counts">
               最高入學年份：{{ yearlyAdmissionStats.years[yearlyAdmissionStats.total_counts.indexOf(Math.max(...yearlyAdmissionStats.total_counts))] }}
               （{{ Math.max(...yearlyAdmissionStats.total_counts) }}人）
             </p>
-            <p v-if="!yearlyAdmissionStats.has_gender">
+            <p v-if="!yearlyAdmissionStats.has_gender && yearlyAdmissionStats.years && yearlyAdmissionStats.total_counts">
               最低入學年份：{{ yearlyAdmissionStats.years[yearlyAdmissionStats.total_counts.indexOf(Math.min(...yearlyAdmissionStats.total_counts))] }}
               （{{ Math.min(...yearlyAdmissionStats.total_counts) }}人）
             </p>
@@ -423,10 +423,11 @@
           
           <el-divider>詳細數據</el-divider>
           <el-table 
+            v-if="yearlyAdmissionStats.years && yearlyAdmissionStats.total_counts"
             :data="yearlyAdmissionStats.years.map((year, i) => ({
               year,
-              female_count: yearlyAdmissionStats.has_gender ? yearlyAdmissionStats.female_counts[i] : null,
-              male_count: yearlyAdmissionStats.has_gender ? yearlyAdmissionStats.male_counts[i] : null,
+              female_count: yearlyAdmissionStats.has_gender && yearlyAdmissionStats.female_counts ? yearlyAdmissionStats.female_counts[i] : null,
+              male_count: yearlyAdmissionStats.has_gender && yearlyAdmissionStats.male_counts ? yearlyAdmissionStats.male_counts[i] : null,
               total_count: yearlyAdmissionStats.total_counts[i],
               female_percentage: yearlyAdmissionStats.has_gender ? yearlyAdmissionStats.female_percentages[i] : null,
               male_percentage: yearlyAdmissionStats.has_gender ? yearlyAdmissionStats.male_percentages[i] : null
@@ -472,10 +473,10 @@
           <div class="stats-summary">
             <p><strong>分析期間：</strong>{{ schoolSourceStats.year_range }}</p>
             <p><strong>總人數：</strong>{{ schoolSourceStats.total_students }} 人</p>
-            <p v-if="schoolSourceStats.summary.peak_year">
+            <p v-if="schoolSourceStats.summary && schoolSourceStats.summary.peak_year">
               最高入學年份：{{ schoolSourceStats.summary.peak_year }}（{{ schoolSourceStats.summary.peak_count }}人）
             </p>
-            <p v-if="schoolSourceStats.summary.low_year">
+            <p v-if="schoolSourceStats.summary && schoolSourceStats.summary.low_year">
               最低入學年份：{{ schoolSourceStats.summary.low_year }}（{{ schoolSourceStats.summary.low_count }}人）
             </p>
           </div>
@@ -493,13 +494,14 @@
           
           <el-divider>各年度學校類型分布詳細數據</el-divider>
           <el-table 
+            v-if="schoolSourceStats.years && schoolSourceStats.school_types && schoolSourceStats.data"
             :data="schoolSourceStats.years.map((year, index) => ({
               year,
               ...Object.fromEntries(schoolSourceStats.school_types.map(type => [
                 type,
                 {
-                  count: schoolSourceStats.data[type].counts[index],
-                  percentage: schoolSourceStats.data[type].percentages[index]
+                  count: schoolSourceStats.data[type] ? schoolSourceStats.data[type].counts[index] : 0,
+                  percentage: schoolSourceStats.data[type] ? schoolSourceStats.data[type].percentages[index] : 0
                 }
               ])),
               total: schoolSourceStats.year_totals[index]
@@ -552,10 +554,10 @@
           <div class="stats-summary">
             <p><strong>分析期間：</strong>{{ admissionMethodStats.year_range }}</p>
             <p><strong>總人數：</strong>{{ admissionMethodStats.total_students }} 人</p>
-            <p v-if="admissionMethodStats.summary.peak_year">
+            <p v-if="admissionMethodStats.summary && admissionMethodStats.summary.peak_year">
               最高入學年份：{{ admissionMethodStats.summary.peak_year }}（{{ admissionMethodStats.summary.peak_count }}人）
             </p>
-            <p v-if="admissionMethodStats.summary.low_year">
+            <p v-if="admissionMethodStats.summary && admissionMethodStats.summary.low_year">
               最低入學年份：{{ admissionMethodStats.summary.low_year }}（{{ admissionMethodStats.summary.low_count }}人）
             </p>
           </div>
@@ -573,16 +575,17 @@
           
           <el-divider>各年度入學管道分布詳細數據</el-divider>
           <el-table 
+            v-if="admissionMethodStats.years && admissionMethodStats.method_types && admissionMethodStats.data"
             :data="admissionMethodStats.years.map((year, index) => ({
               year,
               ...Object.fromEntries(admissionMethodStats.method_types.map(type => [
                 type,
                 {
-                  count: admissionMethodStats.data[type].counts[index],
-                  percentage: admissionMethodStats.data[type].percentages[index]
+                  count: admissionMethodStats.data[type] ? admissionMethodStats.data[type].counts[index] : 0,
+                  percentage: admissionMethodStats.data[type] ? admissionMethodStats.data[type].percentages[index] : 0
                 }
               ])),
-              total: admissionMethodStats.year_totals[index]
+              total: admissionMethodStats.year_totals ? admissionMethodStats.year_totals[index] : 0
             }))"
             border 
             style="width: 100%"
@@ -841,14 +844,15 @@ import { ref, onMounted, nextTick, watch, onBeforeUnmount } from 'vue'
 import { UploadFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import { authService } from '../services/auth.js'
+import { apiService, API_ENDPOINTS } from '../services/api.js'
 import Chart from 'chart.js/auto'
 import * as echarts from 'echarts'
 
 // 導航欄相關
 const router = useRouter()
 const currentTime = ref('')
-const currentUser = ref('管理者')
+const currentUser = ref('')
 
 // 導出對話框相關
 const exportDialogVisible = ref(false)
@@ -864,8 +868,17 @@ const updateTime = () => {
 }
 
 // 登出處理
-const handleLogout = () => {
-  router.push('/')
+const handleLogout = async () => {
+  if (confirm('確定要登出嗎？')) {
+    try {
+      await authService.logout()
+      router.push('/login')
+    } catch (error) {
+      console.error('登出錯誤:', error)
+      authService.logout()
+      router.push('/login')
+    }
+  }
 }
 
 // 響應式數據
@@ -964,8 +977,8 @@ const handleUploadError = () => {
 // 載入文件列表
 const loadFileList = async () => {
   try {
-    const response = await axios.get('http://localhost:5000/api/files')
-    fileList.value = response.data.files
+    const data = await apiService.get(API_ENDPOINTS.FILES)
+    fileList.value = data.files
   } catch (error) {
     ElMessage.error('載入檔案列表失敗')
     console.error(error)
@@ -975,8 +988,12 @@ const loadFileList = async () => {
 // 載入資料庫表格列表
 const loadDatabaseTables = async () => {
   try {
-    const response = await axios.get('http://localhost:5000/api/database_tables')
-    databaseTables.value = response.data.tables
+    const data = await apiService.get(API_ENDPOINTS.DATABASE.NEW_TABLES)
+    if (data.success) {
+      databaseTables.value = data.tables
+    } else {
+      throw new Error(data.message || '載入資料庫表格失敗')
+    }
   } catch (error) {
     console.error('載入資料庫表格失敗:', error)
     ElMessage.error('載入資料庫表格失敗')
@@ -988,10 +1005,10 @@ const loadTableColumns = async () => {
   if (!selectedTable.value) return
   
   try {
-    const response = await axios.post('http://localhost:5000/api/table_columns', {
+    const data = await apiService.post(API_ENDPOINTS.DATABASE.TABLE_COLUMNS, {
       table_name: selectedTable.value
     })
-    columns.value = response.data.columns
+    columns.value = data.columns
     
     // 清空之前的選擇
     selectedColumn.value = ''
@@ -1020,10 +1037,10 @@ const loadFileSheets = async () => {
   if (!selectedFile.value) return
   
   try {
-    const response = await axios.post('http://localhost:5000/api/sheets', {
+    const data = await apiService.post(API_ENDPOINTS.SHEETS, {
       filename: selectedFile.value
     })
-    sheetList.value = response.data.sheets
+    sheetList.value = data.sheets
     selectedSheet.value = ''
     columns.value = []
   } catch (error) {
@@ -1037,11 +1054,11 @@ const loadFileColumns = async () => {
   if (!selectedFile.value || !selectedSheet.value) return
   
   try {
-    const response = await axios.post('http://localhost:5000/api/read_columns', {
+    const data = await apiService.post(API_ENDPOINTS.READ_COLUMNS, {
       filename: selectedFile.value,
       sheet: selectedSheet.value
     })
-    columns.value = response.data.columns
+    columns.value = data.columns
     autoSelectColumns()
   } catch (error) {
     ElMessage.error('載入欄位失敗')
@@ -1052,8 +1069,6 @@ const loadFileColumns = async () => {
 // 自動選擇欄位
 const autoSelectColumns = () => {
   if (columns.value.length === 0) return
-  
-  console.log('可用欄位:', columns.value)
   
   // 自動選擇年份欄位（更完整的匹配）
   const yearColumns = columns.value.filter(col => {
@@ -1071,7 +1086,6 @@ const autoSelectColumns = () => {
     schoolSourceYearCol.value = yearColumns[0]
     admissionMethodYearCol.value = yearColumns[0]
     geoYearCol.value = yearColumns[0]
-    console.log('自動選擇年份欄位:', yearColumns[0])
   }
   
   // 自動選擇學校欄位（更完整的匹配）
@@ -1087,7 +1101,6 @@ const autoSelectColumns = () => {
   })
   if (schoolColumns.length > 0) {
     schoolNameCol.value = schoolColumns[0]
-    console.log('自動選擇學校欄位:', schoolColumns[0])
   }
   
   // 自動選擇入學管道欄位
@@ -1103,7 +1116,7 @@ const autoSelectColumns = () => {
   })
   if (admissionColumns.length > 0) {
     admissionMethodCol.value = admissionColumns[0]
-    console.log('自動選擇入學管道欄位:', admissionColumns[0])
+
   }
   
   // 自動選擇性別欄位
@@ -1116,7 +1129,7 @@ const autoSelectColumns = () => {
   })
   if (genderColumns.length > 0) {
     genderCol.value = genderColumns[0]
-    console.log('自動選擇性別欄位:', genderColumns[0])
+
   }
   
   // 自動選擇地區欄位
@@ -1135,7 +1148,7 @@ const autoSelectColumns = () => {
   })
   if (regionColumns.length > 0) {
     geoRegionCol.value = regionColumns[0]
-    console.log('自動選擇地區欄位:', regionColumns[0])
+
   }
   
   // 自動選擇科目欄位（用於多科目分析）
@@ -1156,7 +1169,7 @@ const autoSelectColumns = () => {
   if (subjectColumns.length > 0) {
     // 預設選擇前3個科目
     selectedSubjects.value = subjectColumns.slice(0, 3)
-    console.log('自動選擇科目欄位:', selectedSubjects.value)
+
   }
   
   // 自動選擇第一個數值型欄位作為統計欄位
@@ -1169,7 +1182,7 @@ const autoSelectColumns = () => {
   })
   if (numericColumns.length > 0 && !selectedColumn.value) {
     selectedColumn.value = numericColumns[0]
-    console.log('自動選擇統計欄位:', numericColumns[0])
+
   }
 }
 
@@ -1181,14 +1194,14 @@ const getColumnStats = async () => {
   }
   
   try {
-    const response = await axios.post('http://localhost:5000/api/column_stats', {
+    const data = await apiService.post(API_ENDPOINTS.COLUMN_STATS, {
       table_name: selectedTable.value,
       column: selectedColumn.value
     })
-    columnStats.value = response.data
-    currentStats.value = response.data
+    columnStats.value = data
+    currentStats.value = data
     await nextTick()
-    renderColumnChart(response.data)
+    renderColumnChart(data)
   } catch (error) {
     ElMessage.error('統計分析失敗')
     console.error(error)
@@ -1202,15 +1215,15 @@ const getMultiSubjectStats = async () => {
   }
   
   try {
-    const response = await axios.post('http://localhost:5000/api/multi_subject_stats', {
+    const data = await apiService.post(API_ENDPOINTS.MULTI_SUBJECT_STATS, {
       table_name: selectedTable.value,
       subjects: selectedSubjects.value,
       year_col: yearCol.value
     })
-    multiSubjectStats.value = response.data
-    currentStats.value = response.data
+    multiSubjectStats.value = data
+    currentStats.value = data
     await nextTick()
-    renderMultiSubjectChart(response.data)
+    renderMultiSubjectChart(data)
   } catch (error) {
     ElMessage.error('多科目分析失敗')
     console.error(error)
@@ -1225,15 +1238,15 @@ const getYearlyAdmissionStats = async () => {
   }
   
   try {
-    const response = await axios.post('http://localhost:5000/api/yearly_admission_stats', {
+    const data = await apiService.post(API_ENDPOINTS.YEARLY_ADMISSION_STATS, {
       table_name: selectedTable.value,
       year_col: yearlyAdmissionYearCol.value,
       gender_col: genderCol.value
     })
-    yearlyAdmissionStats.value = response.data
-    currentStats.value = response.data
+    yearlyAdmissionStats.value = data
+    currentStats.value = data
     await nextTick()
-    renderYearlyAdmissionChart(response.data)
+    renderYearlyAdmissionChart(data)
   } catch (error) {
     ElMessage.error('入學生數量分析失敗')
     console.error(error)
@@ -1247,15 +1260,15 @@ const getSchoolSourceStats = async () => {
   }
   
   try {
-    const response = await axios.post('http://localhost:5000/api/school_source_stats', {
+    const data = await apiService.post(API_ENDPOINTS.SCHOOL_SOURCE_STATS, {
       table_name: selectedTable.value,
       year_col: schoolSourceYearCol.value,
       school_col: schoolNameCol.value
     })
-    schoolSourceStats.value = response.data
-    currentStats.value = response.data
+    schoolSourceStats.value = data
+    currentStats.value = data
     await nextTick()
-    renderSchoolSourceChart(response.data)
+    renderSchoolSourceChart(data)
   } catch (error) {
     ElMessage.error('學校來源分析失敗')
     console.error(error)
@@ -1270,15 +1283,15 @@ const getAdmissionMethodStats = async () => {
   }
   
   try {
-    const response = await axios.post('http://localhost:5000/api/admission_method_stats', {
+    const data = await apiService.post(API_ENDPOINTS.ADMISSION_METHOD_STATS, {
       table_name: selectedTable.value,
       year_col: admissionMethodYearCol.value,
       method_col: admissionMethodCol.value
     })
-    admissionMethodStats.value = response.data
-    currentStats.value = response.data
+    admissionMethodStats.value = data
+    currentStats.value = data
     await nextTick()
-    renderAdmissionMethodChart(response.data)
+    renderAdmissionMethodChart(data)
   } catch (error) {
     ElMessage.error('入學管道分析失敗')
     console.error(error)
@@ -1294,15 +1307,15 @@ const getGeographicStats = async () => {
   }
   
   try {
-    const response = await axios.post('http://localhost:5000/api/geographic_stats', {
+    const data = await apiService.post(API_ENDPOINTS.GEOGRAPHIC_STATS, {
       table_name: selectedTable.value,
       year_col: geoYearCol.value,
       region_col: geoRegionCol.value,
       get_city_details: true
     })
     
-    geoStats.value = response.data
-    currentStats.value = response.data
+    geoStats.value = data
+    currentStats.value = data
     await nextTick()
     renderGeoChart()
     renderRegionalCityCharts()
@@ -1314,12 +1327,12 @@ const getGeographicStats = async () => {
 
 const showRawData = async () => {
   try {
-    const response = await axios.post('http://localhost:5000/api/raw_data', {
+    const data = await apiService.post(API_ENDPOINTS.RAW_DATA, {
       filename: selectedFile.value,
       sheet: selectedSheet.value,
       column: selectedColumn.value
     })
-    rawData.value = response.data.data
+    rawData.value = data.data
   } catch (error) {
     ElMessage.error('載入原始資料失敗')
     console.error(error)
@@ -2531,7 +2544,7 @@ const renderGeoChart = () => {
 // 渲染各區域縣市的圖表
 const renderRegionalCityCharts = () => {
   if (!geoStats.value || !geoStats.value.detailed) {
-    console.log('缺少地理區域縣市詳細資料')
+
     return
   }
   
@@ -2558,13 +2571,11 @@ const renderRegionalCityCharts = () => {
   nextTick(() => {
     regions.forEach(region => {
       if (!geoStats.value.detailed || !geoStats.value.detailed[region]) {
-        console.log(`找不到 ${region} 的詳細數據`)
         return
       }
 
       const chartDom = document.getElementById(`geoChart-${region}`)
       if (!chartDom) {
-        console.log(`找不到 ${region} 的圖表DOM元素`)
         return
       }
 
@@ -2572,7 +2583,6 @@ const renderRegionalCityCharts = () => {
         // 獲取該區域的縣市數據
         const regionData = geoStats.value.detailed[region]
         if (!regionData || !regionData.cities || regionData.cities.length === 0) {
-          console.log(`${region} 沒有縣市數據`)
           return
         }
 
@@ -2798,6 +2808,12 @@ const handleTabChange = (tab) => {
 
 // 初始化
 onMounted(() => {
+  // 獲取當前用戶信息
+  const user = authService.getCurrentUser()
+  if (user) {
+    currentUser.value = user.username || '用戶'
+  }
+  
   loadDatabaseTables()
   
   // 初始化時間並設置定時更新

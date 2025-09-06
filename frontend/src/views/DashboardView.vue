@@ -90,12 +90,12 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { authService } from '../services/auth.js'
-import axios from 'axios'
+import { apiService, API_ENDPOINTS } from '../services/api.js'
 
 const router = useRouter()
 
 // 響應式數據
-const currentUser = ref('管理者')
+const currentUser = ref('')
 const currentTime = ref('')
 const currentDate = ref('')
 
@@ -114,23 +114,26 @@ let timeInterval = null
 const loadStats = async () => {
   try {
     // 獲取資料庫表格數量
-    const tablesResponse = await axios.get('http://localhost:5000/api/database/tables')
-    if (tablesResponse.data.success) {
-      stats.value.totalFiles = tablesResponse.data.tables.length.toString()
+    const tablesResponse = await apiService.get(API_ENDPOINTS.DATABASE.NEW_TABLES)
+    
+    if (tablesResponse.success) {
+      stats.value.totalFiles = tablesResponse.tables.length.toString()
       
       // 計算總數據筆數
       let totalRows = 0
-      for (const table of tablesResponse.data.tables) {
+      for (const table of tablesResponse.tables) {
         try {
-          const countResponse = await axios.get(`http://localhost:5000/api/database/tables/${table.table_name}/count`)
-          if (countResponse.data.success) {
-            totalRows += countResponse.data.count
+          const countResponse = await apiService.get(`${API_ENDPOINTS.DATABASE.TABLE_COUNT}/${table.table_name}/count`)
+          if (countResponse.success) {
+            totalRows += countResponse.count
           }
         } catch (error) {
           console.warn(`無法獲取表格 ${table.table_name} 的筆數:`, error)
         }
       }
       stats.value.totalData = totalRows.toLocaleString()
+    } else {
+      console.error('獲取表格列表失敗:', tablesResponse)
     }
   } catch (error) {
     console.error('載入統計數據失敗:', error)
@@ -158,15 +161,28 @@ const loadUserInfo = () => {
   }
 }
 
-const handleLogout = () => {
+const handleLogout = async () => {
   if (confirm('確定要登出嗎？')) {
-    authService.logout()
-    router.push('/login')
+    try {
+      await authService.logout()
+      router.push('/login')
+    } catch (error) {
+      console.error('登出錯誤:', error)
+      // 即使API調用失敗，也要清除本地存儲並跳轉
+      authService.logout()
+      router.push('/login')
+    }
   }
 }
 
 // 生命週期掛鉤
 onMounted(() => {
+  // 獲取當前用戶信息
+  const user = authService.getCurrentUser()
+  if (user) {
+    currentUser.value = user.username || '用戶'
+  }
+  
   updateTime()
   timeInterval = setInterval(updateTime, 1000)
   loadUserInfo()
