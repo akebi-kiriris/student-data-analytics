@@ -1,11 +1,14 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity, get_jwt
 import os
 import pandas as pd
 import sqlite3
-from sqlalchemy import create_engine, Column, Integer, String, Float, MetaData, Table, inspect, text
+from sqlalchemy import create_engine, Column, Integer, String, Float, MetaData, Table, inspect, text, Boolean, DateTime
 from sqlalchemy.orm import sessionmaker
 import re
+import bcrypt
+from datetime import datetime, timedelta, timezone
 
 
 def filter_dataframe_until_empty_row(df):
@@ -203,7 +206,15 @@ def classify_region(region):
 
 
 app = Flask(__name__)
-CORS(app)  # 開放所有來源 CORS
+CORS(app, supports_credentials=True, allow_headers=['Content-Type', 'Authorization'])  # 允許 Authorization header
+
+# JWT 配置
+app.config['JWT_SECRET_KEY'] = 'your-secret-key-here-change-in-production'  # 使用固定密鑰
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)  # Token 24小時過期
+app.config['JWT_ALGORITHM'] = 'HS256'
+
+# 初始化 JWT
+jwt = JWTManager(app)
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 限制 100MB
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -244,10 +255,280 @@ def create_excel_table(table_name, columns):
     metadata.create_all(engine)
     return table
 
+# === 使用者認證相關的資料表定義 ===
+users_table = Table(
+    'users', metadata,
+    Column('id', Integer, primary_key=True, autoincrement=True),
+    Column('username', String(50), unique=True, nullable=False),
+    Column('email', String(100), unique=True, nullable=False),
+    Column('password_hash', String(255), nullable=False),
+    Column('full_name', String(100)),
+    Column('role', String(20), default='user'),  # 'admin', 'user', 'viewer'
+    Column('is_active', Boolean, default=True),
+    Column('created_at', DateTime, default=datetime.utcnow),
+    Column('updated_at', DateTime, default=datetime.utcnow, onupdate=datetime.utcnow),
+    Column('last_login', DateTime)
+)
+
+# 建立所有表格
+metadata.create_all(engine)
+
 Session = sessionmaker(bind=engine)
+
+# === 輔助函數 ===
+def hash_password(password):
+    """密碼雜湊"""
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+
+def check_password(password, hashed):
+    """驗證密碼"""
+    return bcrypt.checkpw(password.encode('utf-8'), hashed)
+
+def create_default_admin():
+    """建立預設管理員帳號"""
+    session = Session()
+    try:
+        # 檢查是否已存在 admin 用戶
+        admin_exists = session.execute(
+            text("SELECT COUNT(*) FROM users WHERE username = 'admin'")
+        ).scalar()
+        
+        if admin_exists == 0:
+            # 建立預設 admin 帳號
+            password_hash = hash_password('admin123')
+            session.execute(
+                text("""
+                INSERT INTO users (username, email, password_hash, full_name, role, is_active)
+                VALUES (:username, :email, :password_hash, :full_name, :role, :is_active)
+                """),
+                {
+                    'username': 'admin',
+                    'email': 'admin@system.local',
+                    'password_hash': password_hash,
+                    'full_name': '系統管理員',
+                    'role': 'admin',
+                    'is_active': True
+                }
+            )
+            session.commit()
+            print("預設管理員帳號已建立: admin / admin123")
+        
+    except Exception as e:
+        session.rollback()
+        print(f"建立預設管理員失敗: {e}")
+    finally:
+        session.close()
+
+# 建立預設管理員帳號
+create_default_admin()
+
+# === JWT 錯誤處理 ===
+@jwt.expired_token_loader
+def expired_token_callback(jwt_header, jwt_payload):
+    print(f"[DEBUG] Token過期: {jwt_payload}")
+    return jsonify({'error': 'Token 已過期', 'code': 'token_expired'}), 401
+
+@jwt.invalid_token_loader
+def invalid_token_callback(error):
+    print(f"[DEBUG] Token無效: {error}")
+    return jsonify({'error': 'Token 無效', 'code': 'invalid_token'}), 401
+
+@jwt.unauthorized_loader
+def missing_token_callback(error):
+    print(f"[DEBUG] 缺少Token: {error}")
+    return jsonify({'error': '需要登入', 'code': 'authorization_required'}), 401
+
+# === 認證相關 API ===
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    """使用者註冊"""
+    try:
+        data = request.get_json()
+        
+        # 驗證必要欄位
+        required_fields = ['username', 'email', 'password']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({'error': f'缺少必要欄位: {field}'}), 400
+        
+        username = data['username'].strip()
+        email = data['email'].strip()
+        password = data['password']
+        full_name = data.get('full_name', '').strip()
+        
+        # 基本驗證
+        if len(username) < 3:
+            return jsonify({'error': '使用者名稱至少需要3個字元'}), 400
+        
+        if len(password) < 6:
+            return jsonify({'error': '密碼至少需要6個字元'}), 400
+        
+        session = Session()
+        try:
+            # 檢查使用者名稱是否已存在
+            existing_user = session.execute(
+                text("SELECT COUNT(*) FROM users WHERE username = :username OR email = :email"),
+                {'username': username, 'email': email}
+            ).scalar()
+            
+            if existing_user > 0:
+                return jsonify({'error': '使用者名稱或 Email 已存在'}), 400
+            
+            # 建立新使用者
+            password_hash = hash_password(password)
+            session.execute(
+                text("""
+                INSERT INTO users (username, email, password_hash, full_name, role, is_active)
+                VALUES (:username, :email, :password_hash, :full_name, :role, :is_active)
+                """),
+                {
+                    'username': username,
+                    'email': email,
+                    'password_hash': password_hash,
+                    'full_name': full_name,
+                    'role': 'user',  # 新註冊用戶預設為 user
+                    'is_active': True
+                }
+            )
+            session.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': '註冊成功',
+                'user': {
+                    'username': username,
+                    'email': email,
+                    'full_name': full_name,
+                    'role': 'user'
+                }
+            }), 201
+            
+        except Exception as e:
+            session.rollback()
+            return jsonify({'error': f'註冊失敗: {str(e)}'}), 500
+        finally:
+            session.close()
+            
+    except Exception as e:
+        return jsonify({'error': f'請求處理失敗: {str(e)}'}), 500
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """使用者登入"""
+    try:
+        data = request.get_json()
+        
+        username = data.get('username', '').strip()
+        password = data.get('password', '')
+        
+        if not username or not password:
+            return jsonify({'error': '請輸入使用者名稱和密碼'}), 400
+        
+        session = Session()
+        try:
+            # 查詢使用者
+            user_data = session.execute(
+                text("""
+                SELECT id, username, email, password_hash, full_name, role, is_active
+                FROM users 
+                WHERE username = :username AND is_active = 1
+                """),
+                {'username': username}
+            ).fetchone()
+            
+            if not user_data:
+                return jsonify({'error': '使用者名稱或密碼錯誤'}), 401
+            
+            # 驗證密碼
+            if not check_password(password, user_data.password_hash):
+                return jsonify({'error': '使用者名稱或密碼錯誤'}), 401
+            
+            # 更新最後登入時間
+            session.execute(
+                text("UPDATE users SET last_login = :now WHERE id = :user_id"),
+                {'now': datetime.now(timezone.utc), 'user_id': user_data.id}
+            )
+            session.commit()
+            
+            # 建立 JWT token
+            access_token = create_access_token(
+                identity=str(user_data.id),  # 轉換為字符串
+                additional_claims={
+                    'username': user_data.username,
+                    'role': user_data.role
+                }
+            )
+            
+            return jsonify({
+                'success': True,
+                'message': '登入成功',
+                'access_token': access_token,
+                'user': {
+                    'id': user_data.id,
+                    'username': user_data.username,
+                    'email': user_data.email,
+                    'full_name': user_data.full_name,
+                    'role': user_data.role
+                }
+            }), 200
+            
+        finally:
+            session.close()
+            
+    except Exception as e:
+        return jsonify({'error': f'登入失敗: {str(e)}'}), 500
+
+@app.route('/api/auth/profile', methods=['GET'])
+@jwt_required()
+def get_profile():
+    """獲取當前用戶資料"""
+    try:
+        user_id = int(get_jwt_identity())  # 轉換回整數
+        
+        session = Session()
+        try:
+            user_data = session.execute(
+                text("""
+                SELECT id, username, email, full_name, role, created_at, last_login
+                FROM users 
+                WHERE id = :user_id AND is_active = 1
+                """),
+                {'user_id': user_id}
+            ).fetchone()
+            
+            if not user_data:
+                return jsonify({'error': '用戶不存在'}), 404
+            
+            return jsonify({
+                'success': True,
+                'user': {
+                    'id': user_data.id,
+                    'username': user_data.username,
+                    'email': user_data.email,
+                    'full_name': user_data.full_name,
+                    'role': user_data.role,
+                    'created_at': user_data.created_at.isoformat() if user_data.created_at else None,
+                    'last_login': user_data.last_login.isoformat() if user_data.last_login else None
+                }
+            }), 200
+            
+        finally:
+            session.close()
+            
+    except Exception as e:
+        return jsonify({'error': f'獲取用戶資料失敗: {str(e)}'}), 500
+
+@app.route('/api/auth/logout', methods=['POST'])
+@jwt_required()
+def logout():
+    """使用者登出"""
+    # 在 JWT 中，登出主要由前端處理（刪除 token）
+    # 這裡可以記錄登出日誌或其他處理
+    return jsonify({'success': True, 'message': '登出成功'}), 200
 
 
 @app.route('/api/upload', methods=['POST'])
+@jwt_required()
 def upload_file():
     """
     上傳 Excel 檔案並將指定工作表的資料存入 SQLite 資料庫
@@ -330,6 +611,7 @@ def upload_file():
     
 
 @app.route('/api/database_tables', methods=['GET'])
+@jwt_required()
 def list_database_tables():
     """
     取得資料庫中所有已存入的表格清單
@@ -371,6 +653,7 @@ def list_database_tables():
 
 
 @app.route('/api/table_columns', methods=['POST'])
+@jwt_required()
 def get_table_columns():
     """
     取得指定資料表的欄位清單
@@ -395,11 +678,16 @@ def get_table_columns():
 
 
 @app.route('/api/database/tables', methods=['GET'])
+@jwt_required()
 def list_database_tables_new():
     """
     取得資料庫中所有已存入的表格清單（新格式API）
     """
     try:
+        # 添加調試信息
+        current_user_id = get_jwt_identity()
+        print(f"[DEBUG] JWT驗證成功，用戶ID: {current_user_id} (type: {type(current_user_id)})")
+        
         inspector = inspect(engine)
         tables = inspector.get_table_names()
         
@@ -436,6 +724,7 @@ def list_database_tables_new():
 
 
 @app.route('/api/database/tables/<table_name>/count', methods=['GET'])
+@jwt_required()
 def get_table_row_count(table_name):
     """
     取得指定資料表的行數統計
@@ -456,6 +745,7 @@ def get_table_row_count(table_name):
 
 
 @app.route('/api/sheets', methods=['POST'])
+@jwt_required()
 def list_excel_sheets():
     data = request.get_json()
     filename = data.get('filename')
@@ -472,6 +762,7 @@ def list_excel_sheets():
 
 
 @app.route('/api/read_columns', methods=['POST'])
+@jwt_required()
 def read_columns_from_file():
     data = request.get_json()
     filename = data.get('filename')
@@ -498,6 +789,7 @@ def read_columns_from_file():
 
 # 新增 API：查詢指定 Excel 檔案的內容（for 前端圖表）
 @app.route('/api/data', methods=['POST'])
+@jwt_required()
 def get_excel_data_post():
     try:
         data = request.get_json()
@@ -521,6 +813,7 @@ def get_excel_data_post():
 
 # RESTful 風格 GET: /api/data/<filename>
 @app.route('/api/data/<path:filename>', methods=['GET'])
+@jwt_required()
 def get_excel_data_get(filename):
     try:
         sheet = request.args.get('sheet')
@@ -562,6 +855,7 @@ def get_excel_data_get(filename):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/column_stats', methods=['POST'])
+@jwt_required()
 def column_stats():
     """
     從資料庫讀取資料並計算指定欄位的統計數據
@@ -641,6 +935,7 @@ def column_stats():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/multi_subject_stats', methods=['POST'])
+@jwt_required()
 def multi_subject_stats():
     """
     從資料庫讀取多科目分年平均分析
@@ -726,6 +1021,7 @@ def multi_subject_stats():
 
 # 每年入學生數量分析（包含性別統計）- 從資料庫讀取
 @app.route('/api/yearly_admission_stats', methods=['POST'])
+@jwt_required()
 def yearly_admission_stats():
     try:
         data = request.get_json()
@@ -843,6 +1139,7 @@ def yearly_admission_stats():
 
 
 @app.route('/api/school_source_stats', methods=['POST'])
+@jwt_required()
 def school_source_stats():
     """
     從資料庫統計每年入學生的學校來源類型分布
@@ -959,6 +1256,7 @@ def school_source_stats():
 
 
 @app.route('/api/admission_method_stats', methods=['POST'])
+@jwt_required()
 def admission_method_stats():
     """
     從資料庫統計入學管道分析
@@ -1111,6 +1409,7 @@ REGION_MAPPING = {
 REGION_ORDER = ['北台灣', '中台灣', '南台灣', '東台灣', '其他']
 
 @app.route('/api/geographic_stats', methods=['POST'])
+@jwt_required()
 def geographic_stats():
     """
     從資料庫進行地理區域分析

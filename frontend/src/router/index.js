@@ -1,8 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import LoginView from '../views/LoginView.vue'
+import RegisterView from '../views/RegisterView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import DataManagementView from '../views/DataManagementView.vue'
 import AnalysisView from '../views/AnalysisView.vue'
+import { authService } from '../services/auth.js'
 // 暫時隱藏用戶管理頁面導入
 // import UserManagementView from '../views/UserManagementView.vue'
 
@@ -21,6 +23,14 @@ const routes = [
     component: LoginView,
     meta: {
       title: '登入 - 學生資料分析系統'
+    }
+  },
+  {
+    path: '/register',
+    name: 'Register',
+    component: RegisterView,
+    meta: {
+      title: '註冊 - 學生資料分析系統'
     }
   },
   {
@@ -79,8 +89,7 @@ router.beforeEach((to, from, next) => {
 
   // 檢查是否需要登入
   if (to.meta.requiresAuth) {
-    const isAuthenticated = localStorage.getItem('isAuthenticated')
-    if (!isAuthenticated) {
+    if (!authService.isAuthenticated()) {
       next('/login')
       return
     }
@@ -88,8 +97,7 @@ router.beforeEach((to, from, next) => {
 
   // 檢查是否需要管理員權限
   if (to.meta.requiresAdmin) {
-    const userRole = localStorage.getItem('userRole')
-    if (userRole !== 'admin') {
+    if (!authService.isAdmin()) {
       alert('您沒有權限訪問此頁面')
       next('/dashboard')
       return

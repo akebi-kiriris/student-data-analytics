@@ -37,6 +37,10 @@
         </button>
       </form>
       
+      <div class="register-link">
+        <p>還沒有帳號？ <router-link to="/register">立即註冊</router-link></p>
+      </div>
+      
       <div v-if="errorMessage" class="error-message">
         {{ errorMessage }}
       </div>
@@ -173,6 +177,27 @@ const handleLogin = async () => {
 .login-btn:disabled {
   background-color: #ccc;
   cursor: not-allowed;
+}
+
+.register-link {
+  text-align: center;
+  margin-top: 20px;
+}
+
+.register-link p {
+  color: #666;
+  font-size: 14px;
+  margin: 0;
+}
+
+.register-link a {
+  color: #1976d2;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.register-link a:hover {
+  text-decoration: underline;
 }
 
 .error-message {

@@ -129,12 +129,13 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import { authService } from '../services/auth.js'
+import { apiService, API_ENDPOINTS } from '../services/api.js'
 
 const router = useRouter()
 
 // 響應式數據
-const currentUser = ref('管理者')
+const currentUser = ref('')
 const currentTime = ref('')
 const selectedFile = ref(null)
 const availableSheets = ref([])
@@ -148,12 +149,6 @@ const fileInput = ref(null)
 // 方法
 const updateTime = () => {
   currentTime.value = new Date().toLocaleString('zh-TW')
-}
-
-const handleLogout = () => {
-  if (confirm('確定要登出嗎？')) {
-    router.push('/login')
-  }
 }
 
 const triggerFileInput = () => {
@@ -188,12 +183,7 @@ const uploadFile = async () => {
     const formData = new FormData()
     formData.append('file', selectedFile.value)
     
-    const response = await fetch('http://localhost:5000/api/upload', {
-      method: 'POST',
-      body: formData
-    })
-    
-    const result = await response.json()
+    const result = await apiService.upload(API_ENDPOINTS.FILE.UPLOAD, formData)
     
     if (result.need_sheet_selection) {
       // 需要選擇工作表
@@ -229,12 +219,7 @@ const uploadToDatabase = async () => {
     formData.append('file', selectedFile.value)
     formData.append('sheet_name', selectedSheet.value)
     
-    const response = await fetch('http://localhost:5000/api/upload', {
-      method: 'POST',
-      body: formData
-    })
-    
-    const result = await response.json()
+    const result = await apiService.upload(API_ENDPOINTS.FILE.UPLOAD, formData)
     
     if (result.success) {
       alert(`工作表「${selectedSheet.value}」已成功存入資料庫！\n表格名稱：${result.table_name}\n共 ${result.rows_inserted} 筆資料`)
@@ -260,25 +245,29 @@ const uploadToDatabase = async () => {
 // 載入資料庫表格列表
 const loadDatabaseTables = async () => {
   try {
-    const response = await axios.get('http://localhost:5000/api/database/tables')
-    if (response.data.success) {
-      databaseTables.value = response.data.tables
+    const response = await apiService.get(API_ENDPOINTS.DATABASE.NEW_TABLES)
+    
+    if (response.success) {
+      databaseTables.value = response.tables
       
       // 為每個表格載入行數
       for (const table of databaseTables.value) {
         try {
-          const countResponse = await axios.get(`http://localhost:5000/api/database/tables/${table.table_name}/count`)
-          if (countResponse.data.success) {
-            table.row_count = countResponse.data.count.toLocaleString()
+          const countResponse = await apiService.get(`${API_ENDPOINTS.DATABASE.TABLE_COUNT}/${table.table_name}/count`)
+          if (countResponse.success) {
+            table.row_count = countResponse.count.toLocaleString()
           }
         } catch (error) {
           console.warn(`無法獲取表格 ${table.table_name} 的筆數:`, error)
           table.row_count = '未知'
         }
       }
+    } else {
+      console.error('API回應表示失敗:', response)
     }
   } catch (error) {
     console.error('載入資料庫表格失敗:', error)
+    // 不要在這裡跳轉，只是記錄錯誤
   }
 }
 
@@ -413,8 +402,29 @@ const goToPage = (page) => {
   }
 }
 
+// 登出功能
+const handleLogout = async () => {
+  if (confirm('確定要登出嗎？')) {
+    try {
+      await authService.logout()
+      router.push('/login')
+    } catch (error) {
+      console.error('登出錯誤:', error)
+      // 即使API調用失敗，也要清除本地存儲並跳轉
+      authService.logout()
+      router.push('/login')
+    }
+  }
+}
+
 // 生命週期掛鉤
 onMounted(() => {
+  // 獲取當前用戶信息
+  const user = authService.getCurrentUser()
+  if (user) {
+    currentUser.value = user.username || '用戶'
+  }
+  
   updateTime()
   setInterval(updateTime, 1000)
   loadDatabaseTables() // 載入已存入的資料庫表格

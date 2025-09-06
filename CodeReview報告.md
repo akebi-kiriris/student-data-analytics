@@ -24,28 +24,81 @@
 | **移動端支持** | ✅ Vue Native | ✅ React Native | ✅ Ionic |
 | **企業應用** | ✅ 適中 | ✅ 廣泛採用 | ✅ 大型企業首選 |
 
-### 1.2 Vue.js 在本專案中的優勢
+### 1.2 Vue.js 核心特性展示
 
-#### **選擇理由**
+#### **1. 聲明式模板語法**
 ```vue
-<!-- Vue.js 的聲明式語法非常直觀 -->
+<!-- Vue.js 3 響應式框架特色展示 -->
 <template>
-  <div class="data-management-container">
-    <!-- 檔案上傳區域 -->
-    <div class="upload-section">
-      <button @click="triggerFileInput" class="upload-btn">
-        📁 選擇檔案
-      </button>
-      <button 
-        @click="uploadFile" 
-        :disabled="!selectedFile || isUploading"
-      >
-        {{ isUploading ? '上傳中...' : '✅ 確認上傳' }}
-      </button>
-    </div>
+  <div class="upload-section">
+    <!-- @click 語法：減少 DOM 操作，直接綁定事件 -->
+    <button @click="uploadFile" :disabled="isUploading">
+      <!-- 響應式數據：當 isUploading 改變時，畫面自動更新 -->
+      {{ isUploading ? '上傳中...' : '選擇檔案' }}
+    </button>
+    <!-- v-if 條件語法：類似程式語言的 if 語句 -->
+    <div v-if="progress > 0">上傳進度: {{ progress }}%</div>
   </div>
 </template>
+
+<!-- JavaScript 邏輯部分 -->
+<script setup>
+import { ref } from 'vue'
+
+// 定義響應式數據
+const isUploading = ref(false)    // 當這個值改變時
+const progress = ref(0)           // 前端畫面會自動跟著改變
+
+// 點擊事件處理
+const uploadFile = async () => {
+  isUploading.value = true        // 修改數據 → 按鈕文字自動變為"上傳中..."
+  progress.value = 0              // 修改數據 → 進度條重置
+  
+  // 模擬上傳進度
+  for (let i = 0; i <= 100; i += 10) {
+    progress.value = i            // 修改數據 → 進度百分比自動更新
+    await new Promise(resolve => setTimeout(resolve, 200))
+  }
+  
+  isUploading.value = false       // 修改數據 → 按鈕文字自動恢復
+}
+</script>
 ```
+
+**Vue.js 3 核心特色**：
+1. **響應式系統**：修改數據時，前端畫面自動跟著改變
+2. **條件語法支援**：`v-if`、`v-for` 等類似程式語言的邏輯語法
+3. **事件綁定簡化**：`@click` 語法減少繁瑣的 DOM 操作
+4. **數據驅動**：專注於數據邏輯，UI 更新交給 Vue 處理
+
+#### **2. Composition API 邏輯復用**
+```vue
+<script setup>
+import { ref, computed } from 'vue'
+
+// 響應式狀態
+const selectedFile = ref(null)
+const isUploading = ref(false)
+const progress = ref(0)
+
+// 計算屬性
+const canUpload = computed(() => selectedFile.value && !isUploading.value)
+
+// 業務邏輯
+const uploadFile = async () => {
+  if (!canUpload.value) return
+  
+  isUploading.value = true
+  // 上傳邏輯...
+}
+</script>
+```
+
+#### **3. Vue.js 在本專案的實際應用**
+- **路由管理**: Vue Router 4 實現 SPA 導航
+- **狀態管理**: 組合式 API 管理應用狀態
+- **組件復用**: 模組化設計，提高開發效率
+- **響應式設計**: 自適應桌面和行動裝置
 
 #### **Composition API 的優勢**
 ```vue
@@ -154,22 +207,20 @@ export class DataManagementComponent {
 }
 ```
 
-### 1.4 Vite 建構工具的優勢
+### 1.3 Vite 建構工具的優勢
 
-#### **為什麼選擇 Vite 而非 Webpack**
+#### **開發體驗提升對比**
 
-| 特性 | Vite | Webpack | Create Vue |
-|------|------|---------|------------|
-| **開發啟動速度** | ✅ 極快 (<100ms) | ❌ 慢 (>10s) | ⚠️ 中等 (~3s) |
-| **熱更新 (HMR)** | ✅ 瞬間更新 | ⚠️ 較慢 | ✅ 快速 |
-| **Bundle 大小** | ✅ 自動優化 | ⚠️ 需配置 | ✅ 預配置 |
-| **ES Module 支持** | ✅ 原生支持 | ⚠️ 需 polyfill | ✅ 支持 |
-| **TypeScript** | ✅ 開箱即用 | ⚠️ 需配置 | ✅ 內建 |
-| **學習成本** | ✅ 零配置 | ❌ 配置複雜 | ✅ 簡單 |
+| 開發場景 | Vite | Webpack | 提升效果 |
+|---------|------|---------|----------|
+| **冷啟動時間** | <100ms | >10s | 100倍提升 |
+| **熱更新速度** | 瞬間 | 1-3s | 即時響應 |
+| **配置複雜度** | 零配置 | 複雜配置 | 開箱即用 |
+| **Bundle 大小** | 自動優化 | 需手動優化 | 自動最佳化 |
 
-#### **Vite 配置示例**
+#### **實際專案配置**
 ```javascript
-// vite.config.js - 簡潔的配置
+// vite.config.js - 只需幾行配置
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
@@ -177,51 +228,18 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     port: 3000,
-    open: true,
     proxy: {
-      // 代理 API 請求到後端
-      '/api': {
-        target: 'http://localhost:5000',
-        changeOrigin: true
-      }
-    }
-  },
-  build: {
-    outDir: 'dist',
-    sourcemap: true,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          vendor: ['vue', 'vue-router'],
-          charts: ['chart.js']
-        }
-      }
+      '/api': 'http://localhost:5000'  // 代理後端API
     }
   }
 })
 ```
 
-#### **開發體驗提升**
-```json
-// package.json - 簡化的腳本
-{
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build", 
-    "preview": "vite preview"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-vue": "^4.0.0",
-    "vite": "^4.0.0"
-  }
-}
-```
-
-**Vite 的核心優勢**:
-1. **極速冷啟動** - 利用 ES modules 原生支持
-2. **即時熱更新** - 只重新載入變更的模組  
-3. **零配置** - 開箱即用的現代化配置
-4. **生產優化** - 基於 Rollup 的最佳化打包
+#### **Vite 核心優勢**
+1. **ES Module 原生支持** - 瀏覽器直接載入，無需預打包
+2. **依賴預建構** - 第三方套件一次性優化
+3. **按需編譯** - 只編譯修改的檔案
+4. **生產優化** - 基於 Rollup 的高效打包
 
 ---
 

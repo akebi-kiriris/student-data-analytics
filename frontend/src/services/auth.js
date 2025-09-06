@@ -1,54 +1,128 @@
-// 認證服務
+// JWT認證服務
+const API_BASE_URL = 'http://localhost:5000/api'
+
 export const authService = {
   // 登入
-  login(username, password) {
-    return new Promise((resolve, reject) => {
-      // 模擬 API 調用
-      setTimeout(() => {
-        // 簡單的用戶驗證邏輯
-        const users = {
-          'admin': { password: '123456', role: 'admin', name: '管理員' },
-          'teacher': { password: '123456', role: 'teacher', name: '教師' },
-          'student': { password: '123456', role: 'student', name: '學生' }
-        }
+  async login(username, password) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password })
+      })
 
-        if (users[username] && users[username].password === password) {
-          const user = users[username]
-          // 儲存認證資訊
-          localStorage.setItem('isAuthenticated', 'true')
-          localStorage.setItem('userRole', user.role)
-          localStorage.setItem('userName', user.name)
-          localStorage.setItem('userId', username)
-          
-          resolve({
-            success: true,
-            user: {
-              id: username,
-              name: user.name,
-              role: user.role
-            }
-          })
-        } else {
-          reject({
-            success: false,
-            message: '用戶名或密碼錯誤'
-          })
+      const data = await response.json()
+
+      if (response.ok) {
+        // 儲存JWT Token和用戶資訊
+        localStorage.setItem('access_token', data.access_token)
+        localStorage.setItem('user_id', data.user.id.toString())
+        localStorage.setItem('username', data.user.username)
+        localStorage.setItem('user_role', data.user.role)
+        localStorage.setItem('user_email', data.user.email || '')
+        
+        return {
+          success: true,
+          user: data.user
         }
-      }, 1000) // 模擬網路延遲
-    })
+      } else {
+        throw new Error(data.message || '登入失敗')
+      }
+    } catch (error) {
+      throw new Error(error.message || '網路連接失敗')
+    }
+  },
+
+  // 註冊
+  async register(username, email, password, role = 'user') {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, email, password, role })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        return {
+          success: true,
+          message: data.message
+        }
+      } else {
+        throw new Error(data.message || '註冊失敗')
+      }
+    } catch (error) {
+      throw new Error(error.message || '網路連接失敗')
+    }
   },
 
   // 登出
-  logout() {
-    localStorage.removeItem('isAuthenticated')
-    localStorage.removeItem('userRole')
-    localStorage.removeItem('userName')
-    localStorage.removeItem('userId')
+  async logout() {
+    try {
+      const token = this.getToken()
+      if (token) {
+        await fetch(`${API_BASE_URL}/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          }
+        })
+      }
+    } catch (error) {
+      console.error('登出API調用失敗:', error)
+    } finally {
+      // 清除本地儲存
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('user_id')
+      localStorage.removeItem('username')
+      localStorage.removeItem('user_role')
+      localStorage.removeItem('user_email')
+    }
+  },
+
+  // 取得用戶資料
+  async getProfile() {
+    try {
+      const token = this.getToken()
+      if (!token) {
+        throw new Error('未找到認證Token')
+      }
+
+      const response = await fetch(`${API_BASE_URL}/auth/profile`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        return data.user
+      } else {
+        throw new Error(data.message || '獲取用戶資料失敗')
+      }
+    } catch (error) {
+      throw new Error(error.message || '網路連接失敗')
+    }
+  },
+
+  // 取得Token
+  getToken() {
+    return localStorage.getItem('access_token')
   },
 
   // 檢查是否已登入
   isAuthenticated() {
-    return localStorage.getItem('isAuthenticated') === 'true'
+    const token = this.getToken()
+    return !!token
   },
 
   // 獲取當前用戶資訊
@@ -58,20 +132,31 @@ export const authService = {
     }
 
     return {
-      id: localStorage.getItem('userId'),
-      name: localStorage.getItem('userName'),
-      role: localStorage.getItem('userRole')
+      id: localStorage.getItem('user_id'),
+      username: localStorage.getItem('username'),
+      role: localStorage.getItem('user_role'),
+      email: localStorage.getItem('user_email')
     }
   },
 
   // 檢查用戶角色
   hasRole(role) {
-    const userRole = localStorage.getItem('userRole')
+    const userRole = localStorage.getItem('user_role')
     return userRole === role
   },
 
   // 檢查是否為管理員
   isAdmin() {
     return this.hasRole('admin')
+  },
+
+  // 檢查是否為用戶
+  isUser() {
+    return this.hasRole('user')
+  },
+
+  // 檢查是否為觀察者
+  isViewer() {
+    return this.hasRole('viewer')
   }
 }

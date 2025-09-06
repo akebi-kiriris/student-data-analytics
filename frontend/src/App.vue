@@ -2022,11 +2022,14 @@ const beforeUpload = (file) => {
   return true
 }
 
-// 載入檔案清單
+// 載入檔案清單 - 暫時停用，因為這個端點不存在
 const fetchFileList = async () => {
   try {
-    const res = await axios.get('http://localhost:5000/api/files')
-    fileList.value = res.data.files || []
+    // 暫時不調用API，避免404錯誤
+    // const res = await axios.get('http://localhost:5000/api/files')
+    // fileList.value = res.data.files || []
+    fileList.value = []
+    console.log('檔案清單功能暫時停用')
   } catch (err) {
     fileList.value = []
     console.error(err)

@@ -13,6 +13,12 @@ backend/venv/
 backend/ENV/
 backend/.env
 
+# Database files
+backend/database/
+*.db
+*.sqlite
+*.sqlite3
+
 # Uploaded files
 backend/uploads/
 backend/*.xlsx
