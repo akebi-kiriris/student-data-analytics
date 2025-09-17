@@ -158,6 +158,19 @@
           </div>
           <p>分析學生來源地理區域分布，按北、西、南、東台灣等區域統計</p>
         </div>
+
+        <!-- 前20大入學高中 -->
+        <div 
+          class="analysis-block" 
+          :class="{ active: activeBlock === 'top-schools' }"
+          @click="setActiveBlock('top-schools')"
+        >
+          <div class="block-header">
+            <span class="nav-icon">🏆</span>
+            <h3>前20大入學高中</h3>
+          </div>
+          <p>統計並排名入學生數量最多的前20所高中</p>
+        </div>
       </div>
 
       <!-- 分析內容區塊 -->
@@ -339,6 +352,39 @@
           <strong>南台灣：</strong>嘉義市、嘉義縣、台南市、高雄市、屏東縣<br>
           <strong>東台灣：</strong>花蓮縣、台東縣<br>
           <strong>其他：</strong>澎湖縣、金門縣、連江縣、大陸台商子學校等其他地區
+        </div>
+      </div>
+
+      <!-- 前20大入學高中分析區塊 -->
+      <div v-if="activeBlock === 'top-schools'" class="analysis-content">
+        <el-divider>前20大入學高中分析</el-divider>
+        <div class="form-group">
+          <label>高中欄位：</label>
+          <el-select v-model="topSchoolsCol" placeholder="請選擇高中欄位" style="width: 300px">
+            <el-option
+              v-for="col in columns"
+              :key="col"
+              :label="col"
+              :value="col"
+            />
+          </el-select>
+        </div>
+        <div class="form-group">
+          <label>年份欄位（可選）：</label>
+          <el-select v-model="topSchoolsYearCol" placeholder="請選擇年份欄位（可選）" style="width: 300px" clearable>
+            <el-option
+              v-for="col in columns"
+              :key="col"
+              :label="col"
+              :value="col"
+            />
+          </el-select>
+        </div>
+        <div class="button-group">
+          <el-button type="success" @click="getTopSchoolsStats" :disabled="!topSchoolsCol">分析前20大入學高中</el-button>
+        </div>
+        <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
+          <strong>說明：</strong>統計各高中的入學生累計人數，列出前20名高中及其人數分布。如選擇年份欄位，將同時顯示各年度的詳細數據。
         </div>
       </div>
 
@@ -770,6 +816,71 @@
             </el-tab-pane>
           </el-tabs>
         </div>
+
+        <!-- 前20大入學高中分析結果 -->
+        <div v-if="topSchoolsStats" class="stats-card">
+          <el-divider>前20大入學高中分析結果</el-divider>
+          <div class="stats-summary">
+            <p><strong>分析欄位：</strong>{{ topSchoolsStats.column_name }}</p>
+            <p v-if="topSchoolsStats.year_range"><strong>分析期間：</strong>{{ topSchoolsStats.year_range }}</p>
+            <p><strong>總高中數：</strong>{{ topSchoolsStats.total_schools }} 所</p>
+            <p><strong>總學生數：</strong>{{ topSchoolsStats.total_students }} 人</p>
+          </div>
+          
+          <div class="chart-with-export">
+            <div id="topSchoolsChart" style="width: 100%; height: 500px;"></div>
+            <el-button 
+              type="primary" 
+              class="export-btn"
+              @click="showEChartsExportDialog('topSchoolsChart', '前20大入學高中', topSchoolsStats)"
+              icon="Download"
+            >
+              📊 導出圖表
+            </el-button>
+          </div>
+          
+          <el-divider v-if="topSchoolsStats.schools && topSchoolsStats.schools.length > 0">前20大入學高中詳細數據</el-divider>
+          <el-table 
+            v-if="topSchoolsStats.schools && topSchoolsStats.schools.length > 0"
+            :data="topSchoolsStats.schools" 
+            stripe 
+            border 
+            style="width: 100%"
+            :row-class-name="getRowClassName"
+          >
+            <el-table-column prop="rank" label="排名" width="80" align="center">
+              <template #default="scope">
+                <el-tag 
+                  :type="scope.row.rank <= 3 ? 'danger' : scope.row.rank <= 10 ? 'warning' : 'info'"
+                  effect="dark"
+                >
+                  {{ scope.row.rank }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="school_name" label="高中名稱" min-width="200"></el-table-column>
+            <el-table-column prop="total_count" label="總人數" width="120" align="center">
+              <template #default="scope">
+                <strong>{{ scope.row.total_count }}</strong>
+              </template>
+            </el-table-column>
+            <el-table-column prop="percentage" label="占比%" width="120" align="center">
+              <template #default="scope">
+                {{ scope.row.percentage }}%
+              </template>
+            </el-table-column>
+            <el-table-column 
+              v-if="topSchoolsStats.by_year"
+              v-for="year in topSchoolsStats.years" 
+              :key="String(year)" 
+              :prop="`year_${year}`" 
+              :label="String(year)"
+              width="80"
+              align="center"
+            >
+            </el-table-column>
+          </el-table>
+        </div>
       </div>
 
       <!-- 原始資料表格 -->
@@ -896,6 +1007,8 @@ const admissionMethodCol = ref('')
 const geoYearCol = ref('')
 const geoRegionCol = ref('')
 const genderCol = ref('')
+const topSchoolsCol = ref('')
+const topSchoolsYearCol = ref('')
 const activeBlock = ref('')
 const currentStats = ref(null)
 const columnStats = ref(null)
@@ -904,6 +1017,7 @@ const yearlyAdmissionStats = ref(null)
 const schoolSourceStats = ref(null)
 const admissionMethodStats = ref(null)
 const geoStats = ref(null)
+const topSchoolsStats = ref(null)
 const rawData = ref([])
 
 // 圖表實例
@@ -914,6 +1028,7 @@ let schoolSourceChartInstance = null
 let admissionMethodChartInstance = null
 let geoChartInstance = null
 let geoDetailedChartInstances = {}
+let topSchoolsChartInstance = null
 
 // 清理函數
 const cleanupFunctions = []
@@ -929,6 +1044,7 @@ const setActiveBlock = (blockName) => {
   schoolSourceStats.value = null
   admissionMethodStats.value = null
   geoStats.value = null
+  topSchoolsStats.value = null
   rawData.value = []
   
   // 清理圖表
@@ -961,6 +1077,10 @@ const setActiveBlock = (blockName) => {
       if (chart) chart.dispose()
     })
     geoDetailedChartInstances = {}
+  }
+  if (topSchoolsChartInstance) {
+    topSchoolsChartInstance.dispose()
+    topSchoolsChartInstance = null
   }
 }
 
@@ -1088,7 +1208,7 @@ const autoSelectColumns = () => {
     geoYearCol.value = yearColumns[0]
   }
   
-  // 自動選擇學校欄位（更完整的匹配）
+  // 自動選擇學校欄位（按優先級排序）
   const schoolColumns = columns.value.filter(col => {
     const colLower = col.toLowerCase()
     return col.includes('學校') || 
@@ -1096,11 +1216,32 @@ const autoSelectColumns = () => {
            col.includes('高職') ||
            col.includes('國中') ||
            col.includes('畢業學校') ||
+           col.includes('畢業高中') ||
            colLower.includes('school') ||
            col.includes('校名')
   })
-  if (schoolColumns.length > 0) {
-    schoolNameCol.value = schoolColumns[0]
+  
+  // 按優先級排序學校欄位
+  const priorityOrder = ['畢業高中', '畢業學校', '高中', '學校', '校名']
+  let selectedSchoolCol = null
+  
+  for (const priority of priorityOrder) {
+    const found = schoolColumns.find(col => col.includes(priority))
+    if (found) {
+      selectedSchoolCol = found
+      break
+    }
+  }
+  
+  // 如果沒找到優先級欄位，使用第一個匹配的欄位
+  if (!selectedSchoolCol && schoolColumns.length > 0) {
+    selectedSchoolCol = schoolColumns[0]
+  }
+  
+  if (selectedSchoolCol) {
+    schoolNameCol.value = selectedSchoolCol
+    // 同時設置前20大入學高中的欄位
+    topSchoolsCol.value = selectedSchoolCol
   }
   
   // 自動選擇入學管道欄位
@@ -1325,11 +1466,58 @@ const getGeographicStats = async () => {
   }
 }
 
+// 前20大入學高中分析
+const getTopSchoolsStats = async () => {
+  if (!topSchoolsCol.value) {
+    ElMessage.warning('請先選擇高中欄位')
+    return
+  }
+  
+  // 檢查是否選擇了資料表
+  if (!selectedTable.value) {
+    ElMessage.warning('請先選擇資料表')
+    return
+  }
+  
+  try {
+    const requestData = {
+      school_col: topSchoolsCol.value,
+      year_col: topSchoolsYearCol.value || null,
+      filename: selectedTable.value  // 使用資料表名稱作為 filename
+    }
+    
+    console.log('前20大入學高中分析請求參數:', requestData)
+    
+    const data = await apiService.post(API_ENDPOINTS.TOP_SCHOOLS_STATS, requestData)
+    
+    topSchoolsStats.value = data
+    currentStats.value = data
+    
+    console.log('前20大入學高中分析結果:', data)
+    
+    await nextTick()
+    
+    // 初始化圖表
+    const chartDom = document.getElementById('topSchoolsChart')
+    if (chartDom) {
+      if (topSchoolsChartInstance) {
+        topSchoolsChartInstance.dispose()
+      }
+      topSchoolsChartInstance = echarts.init(chartDom)
+    }
+    
+    renderTopSchoolsChart()
+  } catch (error) {
+    ElMessage.error('前20大入學高中分析失敗')
+    console.error(error)
+  }
+}
+
 const showRawData = async () => {
   try {
+    // 使用資料庫表格而非檔案
     const data = await apiService.post(API_ENDPOINTS.RAW_DATA, {
-      filename: selectedFile.value,
-      sheet: selectedSheet.value,
+      table_name: selectedTable.value,
       column: selectedColumn.value
     })
     rawData.value = data.data
@@ -2758,6 +2946,83 @@ const renderRegionalCityCharts = () => {
   })
 }
 
+// 渲染前20大入學高中圖表
+const renderTopSchoolsChart = () => {
+  if (!topSchoolsChartInstance) return
+  
+  try {
+    const data = topSchoolsStats.value?.schools || []
+    
+    if (data.length === 0) {
+      console.warn('沒有學校數據可以渲染圖表')
+      return
+    }
+    
+    // 取前20筆資料
+    const top20Schools = data.slice(0, 20)
+    
+    const option = {
+      title: {
+        text: '前20大入學高中',
+        left: 'center',
+        textStyle: {
+          fontSize: 16,
+          fontWeight: 'bold'
+        }
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'shadow'
+        },
+        formatter: (params) => {
+          const data = params[0]
+          return `${data.name}<br/>學生人數: <strong>${data.value}人</strong>`
+        }
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '3%',
+        top: '60px',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'value',
+        name: '學生人數'
+      },
+      yAxis: {
+        type: 'category',
+        data: top20Schools.map(school => school.school_name).reverse(),
+        axisLabel: {
+          fontSize: 12,
+          interval: 0
+        }
+      },
+      series: [{
+        name: '學生人數',
+        type: 'bar',
+        data: top20Schools.map(school => school.total_count).reverse(),
+        itemStyle: {
+          color: '#5470c6'
+        },
+        label: {
+          show: true,
+          position: 'right',
+          fontSize: 12,
+          color: '#666'
+        }
+      }],
+      animationDuration: 1000,
+      animationEasing: 'cubicOut'
+    }
+    
+    topSchoolsChartInstance.setOption(option)
+  } catch (error) {
+    console.error('渲染前20大入學高中圖表時出錯:', error)
+  }
+}
+
 // 格式化區域表格數據
 const formatRegionTableData = (region) => {
   if (!geoStats.value || !geoStats.value.detailed || !geoStats.value.detailed[region]) return []
@@ -2804,6 +3069,16 @@ const handleTabChange = (tab) => {
       }, 300)
     }
   })
+}
+
+// 表格行樣式
+const getRowClassName = ({ row, rowIndex }) => {
+  if (activeBlock.value === 'top-schools' && topSchoolsStats.value && topSchoolsStats.value.schools) {
+    const rank = row.rank || rowIndex + 1
+    if (rank <= 3) return 'top-three-row'
+    if (rank <= 10) return 'top-ten-row'
+  }
+  return ''
 }
 
 // 初始化
@@ -3252,5 +3527,26 @@ onMounted(() => {
 
 :deep(.el-table__row:hover) {
   background-color: #f5f7fa;
+}
+
+/* 前三名行樣式 */
+:deep(.el-table .top-three-row) {
+  background-color: #fdf6ec !important;
+  color: #e6a23c;
+  font-weight: bold;
+}
+
+:deep(.el-table .top-three-row:hover) {
+  background-color: #faecd8 !important;
+}
+
+/* 前十名行樣式 */
+:deep(.el-table .top-ten-row) {
+  background-color: #f0f9ff !important;
+  color: #409eff;
+}
+
+:deep(.el-table .top-ten-row:hover) {
+  background-color: #ecf5ff !important;
 }
 </style>
