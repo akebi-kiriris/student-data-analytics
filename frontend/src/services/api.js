@@ -153,6 +153,10 @@ export const API_ENDPOINTS = {
     YEARLY_ADMISSION: '/yearly_admission_stats',
     SCHOOL_SOURCE: '/school_source_stats',
     ADMISSION_METHOD: '/admission_method_stats',
-    GEOGRAPHIC: '/geographic_stats'
-  }
+    GEOGRAPHIC: '/geographic_stats',
+    TOP_SCHOOLS: '/top_schools_stats'
+  },
+  
+  // 前20大入學高中
+  TOP_SCHOOLS_STATS: '/top_schools_stats'
 }

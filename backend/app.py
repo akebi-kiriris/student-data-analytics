@@ -1559,5 +1559,152 @@ def geographic_stats():
         print(f"[geographic_stats] Error: {str(e)}")
         return jsonify({'error': f'處理資料時發生錯誤: {str(e)}'}), 500
 
+
+@app.route('/api/top_schools_stats', methods=['POST'])
+@jwt_required()
+def top_schools_stats():
+    """前20大入學高中統計"""
+    try:
+        data = request.get_json()
+        
+        # 基本參數
+        filename = data.get('filename')
+        sheet = data.get('sheet', '')
+        school_col = data.get('school_col')
+        year_col = data.get('year_col')  # 可選
+        
+        if not filename or not school_col:
+            return jsonify({'error': '檔案名稱和學校欄位為必要參數'}), 400
+        
+        print(f"[top_schools_stats] 開始分析前20大入學高中")
+        print(f"[top_schools_stats] filename: {filename}, sheet: {sheet}")
+        print(f"[top_schools_stats] school_col: {school_col}, year_col: {year_col}")
+        
+        # 建立資料庫連接
+        engine = create_engine(f'sqlite:///database/excel_data.db')
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        
+        try:
+            # 讀取資料
+            if sheet:
+                # 從檔案讀取
+                df = pd.read_excel(f'uploads/{filename}', sheet_name=sheet)
+                df = filter_dataframe_until_empty_row(df)
+            else:
+                # 從資料庫讀取
+                table_name = filename.replace('.xlsx', '').replace('.xls', '')
+                df = pd.read_sql_table(table_name, engine)
+            
+            if df.empty:
+                return jsonify({'error': '沒有找到資料'}), 400
+            
+            print(f"[top_schools_stats] 資料讀取完成，共 {len(df)} 筆記錄")
+            
+            # 檢查欄位是否存在
+            if school_col not in df.columns:
+                return jsonify({'error': f'找不到學校欄位: {school_col}'}), 400
+            
+            if year_col and year_col not in df.columns:
+                return jsonify({'error': f'找不到年份欄位: {year_col}'}), 400
+            
+            # 清理學校名稱資料
+            df[school_col] = df[school_col].fillna('未知')
+            df[school_col] = df[school_col].astype(str).str.strip()
+            
+            # 過濾掉無效的學校名稱
+            df = df[df[school_col] != '']
+            df = df[df[school_col] != '未知']
+            df = df[df[school_col] != 'nan']
+            
+            result = {}
+            
+            if year_col:
+                # 按年份分析
+                df[year_col] = pd.to_numeric(df[year_col], errors='coerce')
+                df = df.dropna(subset=[year_col])
+                
+                # 按學校和年份統計
+                yearly_stats = df.groupby([school_col, year_col]).size().reset_index(name='count')
+                
+                # 計算每個學校的總人數
+                school_totals = yearly_stats.groupby(school_col)['count'].sum().reset_index()
+                school_totals = school_totals.sort_values('count', ascending=False)
+                
+                # 取前20大學校
+                top20_schools = school_totals.head(20)
+                
+                # 獲取年份列表
+                years = sorted(df[year_col].unique())
+                
+                # 為每個學校添加年度詳細資料
+                schools_data = []
+                total_students = df.shape[0]
+                
+                for idx, (_, row) in enumerate(top20_schools.iterrows()):
+                    school_name = row[school_col]
+                    total_count = row['count']
+                    
+                    school_data = {
+                        'rank': idx + 1,
+                        'school_name': school_name,
+                        'total_count': int(total_count),
+                        'percentage': round((total_count / total_students) * 100, 2)
+                    }
+                    
+                    # 添加每年的詳細數據
+                    for year in years:
+                        year_count = yearly_stats[
+                            (yearly_stats[school_col] == school_name) & 
+                            (yearly_stats[year_col] == year)
+                        ]['count'].sum()
+                        school_data[f'year_{int(year)}'] = int(year_count)
+                    
+                    schools_data.append(school_data)
+                
+                result = {
+                    'schools': schools_data,
+                    'total_students': int(total_students),
+                    'by_year': True,
+                    'years': [int(year) for year in years]
+                }
+                
+            else:
+                # 不按年份分析
+                school_counts = df[school_col].value_counts().reset_index()
+                school_counts.columns = [school_col, 'count']
+                
+                # 取前20大學校
+                top20_schools = school_counts.head(20)
+                
+                # 格式化結果
+                schools_data = []
+                total_students = df.shape[0]
+                
+                for idx, (_, row) in enumerate(top20_schools.iterrows()):
+                    schools_data.append({
+                        'rank': idx + 1,
+                        'school_name': row[school_col],
+                        'total_count': int(row['count']),
+                        'percentage': round((row['count'] / total_students) * 100, 2)
+                    })
+                
+                result = {
+                    'schools': schools_data,
+                    'total_students': int(total_students),
+                    'by_year': False
+                }
+            
+            print(f"[top_schools_stats] 分析完成，前20大學校數據已生成")
+            return jsonify(result)
+            
+        finally:
+            session.close()
+
+    except Exception as e:
+        print(f"[top_schools_stats] Error: {str(e)}")
+        return jsonify({'error': f'處理資料時發生錯誤: {str(e)}'}), 500
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
