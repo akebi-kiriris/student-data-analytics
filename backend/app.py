@@ -67,8 +67,8 @@ def classify_admission_method(method_name):
     # 定義各類型入學管道的關鍵字（按優先級排序）
     classification_rules = [
         # 自然組和社會組的處理（優先處理，因為可能包含在申請入學中）
-        ('自然組', [r'\(自然組\)']),
-        ('社會組', [r'\(社會組\)']),
+        ('自然組', [r'^\(自然組\)$', r'自然組']),
+        ('社會組', [r'^\(社會組\)$', r'社會組']),
         
         # 繁星推薦
         ('繁星推薦', [r'^繁星推薦$', r'^繁星$']),
@@ -1704,6 +1704,240 @@ def top_schools_stats():
     except Exception as e:
         print(f"[top_schools_stats] Error: {str(e)}")
         return jsonify({'error': f'處理資料時發生錯誤: {str(e)}'}), 500
+
+
+@app.route('/api/subject_average_stats', methods=['POST'])
+@jwt_required()
+def subject_average_stats():
+    """大一各科平均成績分析"""
+    try:
+        # 初始化資料庫會話
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        
+        print(f"[subject_average_stats] 開始處理大一各科平均成績分析")
+        
+        # 定義科目欄位
+        subjects = [
+            '會計學', '計算機概論', '微積分', '基礎程式設計', 
+            '統計1', '經濟學', '程式設計', '管理學', '統計2'
+        ]
+        
+        # 從資料庫取得資料
+        table_name = 'excel_107_113大一新生來源管道與成績分析_20250525_整理後總表'
+        query = f"""
+        SELECT 年度, {', '.join([f'`{subject}`' for subject in subjects])}
+        FROM `{table_name}` 
+        WHERE 年度 IS NOT NULL
+        """
+        
+        try:
+            df = pd.read_sql_query(query, session.bind)
+            print(f"[subject_average_stats] 成功讀取 {len(df)} 筆資料")
+        except Exception as e:
+            print(f"[subject_average_stats] 資料庫讀取失敗: {str(e)}")
+            return jsonify({'error': f'資料庫讀取失敗: {str(e)}'}), 500
+        
+        if df.empty:
+            return jsonify({'error': '沒有找到相關資料'}), 404
+        
+        # 處理年度欄位，確保為數字
+        df['年度'] = pd.to_numeric(df['年度'], errors='coerce')
+        df = df.dropna(subset=['年度'])
+        
+        # 將科目成績轉為數字，並處理無效值
+        for subject in subjects:
+            df[subject] = pd.to_numeric(df[subject], errors='coerce')
+        
+        # 獲取完整資料包含性別、高中別、入學管道
+        complete_query = f"""
+        SELECT 年度, 性別, 高中別, 入學管道, {', '.join([f'`{subject}`' for subject in subjects])}
+        FROM `{table_name}` 
+        WHERE 年度 IS NOT NULL
+        """
+        
+        try:
+            complete_df = pd.read_sql_query(complete_query, session.bind)
+            print(f"[subject_average_stats] 成功讀取完整資料 {len(complete_df)} 筆")
+        except Exception as e:
+            print(f"[subject_average_stats] 完整資料讀取失敗: {str(e)}")
+            complete_df = df  # 使用原始資料作為備用
+        
+        # 處理年度欄位，確保為數字
+        complete_df['年度'] = pd.to_numeric(complete_df['年度'], errors='coerce')
+        complete_df = complete_df.dropna(subset=['年度'])
+        
+        # 將科目成績轉為數字，並處理無效值
+        for subject in subjects:
+            complete_df[subject] = pd.to_numeric(complete_df[subject], errors='coerce')
+        
+        # 定義分類對應
+        school_type_mapping = {
+            '國立': '國立',
+            '私立': '私立', 
+            '財團法人': '財團',
+            '市立': '市立',
+            '大陸台商': '其他',
+            '私大轉': '私大轉',
+            '科大轉': '科大轉',
+            '國大轉': '國大轉',
+            '僑生': '僑生'
+        }
+        
+        admission_types = ['申請入學', '繁星推薦', '自然組', '社會組', '僑生', '願景', '其他']
+        
+        # 計算每年每科的平均成績及其他統計
+        yearly_averages = []
+        years = sorted(complete_df['年度'].unique())
+        
+        for year in years:
+            year_data = complete_df[complete_df['年度'] == year]
+            year_avg = {'年度': int(year)}
+            
+            # 基本統計
+            year_avg['總人數'] = len(year_data)
+            
+            # 性別統計
+            gender_stats = year_data['性別'].value_counts()
+            year_avg['男性人數'] = int(gender_stats.get('男', 0))
+            year_avg['女性人數'] = int(gender_stats.get('女', 0))
+            
+            # 高中別統計 - 使用優先級匹配避免重複
+            school_type_stats = {}
+            processed_indices = set()
+            
+            # 按優先級順序處理，避免重複計算
+            priority_mapping = [
+                ('國立', '國立'),
+                ('私立', '私立'),
+                ('財團法人', '財團'),  
+                ('市立', '市立'),
+                ('大陸台商', '其他'),
+                ('私大轉', '私大轉'),
+                ('科大轉', '科大轉'),
+                ('國大轉', '國大轉'),
+                ('僑生', '僑生')
+            ]
+            
+            for original_type, mapped_type in priority_mapping:
+                mask = year_data['高中別'].astype(str).str.contains(original_type, na=False)
+                # 只計算尚未被處理的資料
+                available_mask = mask & ~year_data.index.isin(processed_indices)
+                count = available_mask.sum()
+                
+                if count > 0:
+                    school_type_stats[mapped_type] = int(count)
+                    # 標記已處理的索引
+                    processed_indices.update(year_data[available_mask].index)
+            
+            # 將高中別統計加入結果
+            for school_type in ['國立', '私立', '財團', '市立', '其他', '私大轉', '科大轉', '國大轉', '僑生']:
+                year_avg[f'{school_type}人數'] = school_type_stats.get(school_type, 0)
+            
+            # 入學管道統計 - 使用分類函數
+            year_data['入學管道分類'] = year_data['入學管道'].apply(classify_admission_method)
+            admission_classified_stats = year_data['入學管道分類'].value_counts()
+            for admission_type in admission_types:
+                year_avg[f'{admission_type}人數'] = int(admission_classified_stats.get(admission_type, 0))
+            
+            # 科目平均成績
+            for subject in subjects:
+                # 計算該年該科目的平均成績（排除 NaN 值）
+                valid_scores = year_data[subject].dropna()
+                if len(valid_scores) > 0:
+                    avg_score = valid_scores.mean()
+                    year_avg[subject] = round(avg_score, 2)
+                else:
+                    year_avg[subject] = None
+            
+            yearly_averages.append(year_avg)
+        
+        # 計算整體統計
+        overall_stats = {}
+        for subject in subjects:
+            valid_scores = df[subject].dropna()
+            if len(valid_scores) > 0:
+                overall_stats[subject] = {
+                    'overall_average': round(valid_scores.mean(), 2),
+                    'min_score': round(valid_scores.min(), 2),
+                    'max_score': round(valid_scores.max(), 2),
+                    'std_dev': round(valid_scores.std(), 2),
+                    'total_students': len(valid_scores)
+                }
+            else:
+                overall_stats[subject] = {
+                    'overall_average': None,
+                    'min_score': None,
+                    'max_score': None,
+                    'std_dev': None,
+                    'total_students': 0
+                }
+        
+        # 找出最高和最低平均成績的科目
+        subject_averages = [(subject, stats['overall_average']) 
+                          for subject, stats in overall_stats.items() 
+                          if stats['overall_average'] is not None]
+        
+        highest_subject = max(subject_averages, key=lambda x: x[1]) if subject_averages else None
+        lowest_subject = min(subject_averages, key=lambda x: x[1]) if subject_averages else None
+        
+        # 計算整體統計摘要
+        total_students_all_years = len(complete_df)
+        gender_summary = complete_df['性別'].value_counts()
+        
+        # 整體高中別統計 - 避免重複計算
+        school_type_summary = {}
+        processed_indices_overall = set()
+        
+        for original_type, mapped_type in priority_mapping:
+            mask = complete_df['高中別'].astype(str).str.contains(original_type, na=False)
+            available_mask = mask & ~complete_df.index.isin(processed_indices_overall)
+            count = available_mask.sum()
+            
+            if count > 0:
+                school_type_summary[mapped_type] = int(count)
+                processed_indices_overall.update(complete_df[available_mask].index)
+        
+        # 整體入學管道統計 - 使用分類函數
+        complete_df['入學管道分類'] = complete_df['入學管道'].apply(classify_admission_method)
+        admission_summary = complete_df['入學管道分類'].value_counts()
+        
+        result = {
+            'yearly_data': yearly_averages,
+            'overall_stats': overall_stats,
+            'subjects': subjects,
+            'years': [int(year) for year in years],
+            'year_range': f"{int(min(years))}-{int(max(years))}",
+            'total_students': total_students_all_years,
+            'gender_summary': {
+                '男性': int(gender_summary.get('男', 0)),
+                '女性': int(gender_summary.get('女', 0))
+            },
+            'school_type_summary': school_type_summary,
+            'admission_summary': {k: int(v) for k, v in admission_summary.items()},
+            'school_types': ['國立', '私立', '財團', '市立', '其他', '私大轉', '科大轉', '國大轉', '僑生'],
+            'admission_types': admission_types,
+            'highest_subject': {
+                'subject': highest_subject[0],
+                'average': highest_subject[1]
+            } if highest_subject else None,
+            'lowest_subject': {
+                'subject': lowest_subject[0],
+                'average': lowest_subject[1]
+            } if lowest_subject else None,
+            'column_name': '大一各科平均成績'
+        }
+        
+        print(f"[subject_average_stats] 分析完成，涵蓋 {len(years)} 年度、{len(subjects)} 科目")
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"[subject_average_stats] Error: {str(e)}")
+        return jsonify({'error': f'處理資料時發生錯誤: {str(e)}'}), 500
+    
+    finally:
+        if 'session' in locals():
+            session.close()
 
 
 if __name__ == '__main__':
