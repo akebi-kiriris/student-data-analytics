@@ -111,13 +111,129 @@
                     📊 分析資料
                   </button>
                   <button @click="viewTableData(table)" class="view-btn">
-                    👁️ 預覽資料
+                    👁️ 管理資料
                   </button>
                   <button @click="deleteTable(table)" class="delete-table-btn">
                     🗑️ 刪除
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 數據 CRUD 管理區域 -->
+        <div v-if="showDataManager" class="data-crud-section">
+          <div class="crud-header">
+            <h3>{{ currentTable.display_name }} - 數據管理</h3>
+            <div class="crud-actions">
+              <button @click="showCreateDialog" class="create-btn">
+                ➕ 新增資料
+              </button>
+              <button @click="refreshTableData" class="refresh-btn">
+                🔄 重新整理
+              </button>
+              <button @click="showDataManager = false" class="close-btn">
+                ✖️ 關閉
+              </button>
+            </div>
+          </div>
+
+          <!-- 搜尋區域 -->
+          <div class="search-section">
+            <input 
+              v-model="searchQuery" 
+              @keyup.enter="performSearch"
+              placeholder="搜尋資料..." 
+              class="search-input"
+            >
+            <button @click="performSearch" class="search-btn">🔍 搜尋</button>
+            <button @click="clearSearch" class="clear-btn">🗑️ 清除</button>
+          </div>
+
+          <!-- 數據表格 -->
+          <div class="data-table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th v-for="col in tableColumns" :key="col">{{ col }}</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in tableData" :key="row.id">
+                  <td>{{ row.id }}</td>
+                  <td v-for="col in tableColumns" :key="col">
+                    <div v-if="editingRow === row.id" class="edit-cell">
+                      <input 
+                        v-model="editData[col]" 
+                        :placeholder="col"
+                        class="edit-input"
+                      >
+                    </div>
+                    <div v-else class="view-cell">{{ row[col] || '-' }}</div>
+                  </td>
+                  <td class="action-cell">
+                    <div v-if="editingRow === row.id" class="edit-actions">
+                      <button @click="saveEdit(row.id)" class="save-btn">💾</button>
+                      <button @click="cancelEdit" class="cancel-btn">✖️</button>
+                    </div>
+                    <div v-else class="view-actions">
+                      <button @click="startEdit(row)" class="edit-btn">✏️</button>
+                      <button @click="deleteRow(row.id)" class="delete-btn">🗑️</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 分頁 -->
+          <div class="pagination" v-if="pagination.total_pages > 1">
+            <button 
+              @click="changePage(pagination.current_page - 1)"
+              :disabled="!pagination.has_prev"
+              class="page-btn"
+            >
+              ◀️ 上一頁
+            </button>
+            <span class="page-info">
+              第 {{ pagination.current_page }} / {{ pagination.total_pages }} 頁 
+              (共 {{ pagination.total_count }} 筆)
+            </span>
+            <button 
+              @click="changePage(pagination.current_page + 1)"
+              :disabled="!pagination.has_next"
+              class="page-btn"
+            >
+              下一頁 ▶️
+            </button>
+          </div>
+        </div>
+
+        <!-- 新增資料對話框 -->
+        <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3>新增資料</h3>
+              <button @click="showCreateModal = false" class="modal-close">✖️</button>
+            </div>
+            <div class="modal-body">
+              <form @submit.prevent="createNewRow">
+                <div v-for="col in tableColumns" :key="col" class="form-group">
+                  <label>{{ col }}:</label>
+                  <input 
+                    v-model="newRowData[col]" 
+                    :placeholder="col"
+                    class="form-input"
+                  >
+                </div>
+                <div class="form-actions">
+                  <button type="submit" class="submit-btn">💾 儲存</button>
+                  <button type="button" @click="showCreateModal = false" class="cancel-btn">取消</button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
@@ -142,6 +258,25 @@ const availableSheets = ref([])
 const selectedSheet = ref('')
 const isUploading = ref(false)
 const databaseTables = ref([])
+
+// CRUD 相關數據
+const showDataManager = ref(false)
+const currentTable = ref(null)
+const tableData = ref([])
+const tableColumns = ref([])
+const pagination = ref({
+  current_page: 1,
+  total_pages: 1,
+  total_count: 0,
+  limit: 50,
+  has_next: false,
+  has_prev: false
+})
+const searchQuery = ref('')
+const editingRow = ref(null)
+const editData = ref({})
+const showCreateModal = ref(false)
+const newRowData = ref({})
 
 // 模板引用
 const fileInput = ref(null)
@@ -281,10 +416,132 @@ const analyzeTable = (table) => {
 
 const viewTableData = async (table) => {
   try {
-    // 這裡可以實現資料預覽功能
-    alert(`預覽功能：顯示表格 ${table.display_name} 的前20筆資料`)
+    currentTable.value = table
+    showDataManager.value = true
+    searchQuery.value = ''
+    await loadTableData()
   } catch (error) {
-    alert('預覽失敗：' + error.message)
+    alert('載入資料失敗：' + error.message)
+  }
+}
+
+// CRUD 相關方法
+const loadTableData = async (page = 1) => {
+  try {
+    const params = {
+      page,
+      limit: 50,
+      search: searchQuery.value
+    }
+    
+    const result = await apiService.crud.getTableData(currentTable.value.table_name, params)
+    
+    if (result.success) {
+      tableData.value = result.data
+      tableColumns.value = result.columns.filter(col => col !== 'id')
+      pagination.value = result.pagination
+    } else {
+      throw new Error(result.error)
+    }
+  } catch (error) {
+    alert('載入資料失敗：' + error.message)
+  }
+}
+
+const refreshTableData = () => {
+  loadTableData(pagination.value.current_page)
+}
+
+const performSearch = () => {
+  loadTableData(1) // 搜尋時回到第一頁
+}
+
+const clearSearch = () => {
+  searchQuery.value = ''
+  loadTableData(1)
+}
+
+const changePage = (page) => {
+  if (page >= 1 && page <= pagination.value.total_pages) {
+    loadTableData(page)
+  }
+}
+
+// 編輯相關
+const startEdit = (row) => {
+  editingRow.value = row.id
+  editData.value = { ...row }
+}
+
+const cancelEdit = () => {
+  editingRow.value = null
+  editData.value = {}
+}
+
+const saveEdit = async (rowId) => {
+  try {
+    const updateData = {}
+    tableColumns.value.forEach(col => {
+      updateData[col] = editData.value[col]
+    })
+    
+    const result = await apiService.crud.updateRow(currentTable.value.table_name, rowId, updateData)
+    
+    if (result.success) {
+      alert('資料更新成功！')
+      editingRow.value = null
+      editData.value = {}
+      await loadTableData(pagination.value.current_page)
+    } else {
+      throw new Error(result.error)
+    }
+  } catch (error) {
+    alert('更新失敗：' + error.message)
+  }
+}
+
+const deleteRow = async (rowId) => {
+  if (!confirm('確定要刪除這筆資料嗎？此操作無法復原。')) {
+    return
+  }
+  
+  try {
+    const result = await apiService.crud.deleteRow(currentTable.value.table_name, rowId)
+    
+    if (result.success) {
+      alert('資料刪除成功！')
+      await loadTableData(pagination.value.current_page)
+    } else {
+      throw new Error(result.error)
+    }
+  } catch (error) {
+    alert('刪除失敗：' + error.message)
+  }
+}
+
+// 新增資料相關
+const showCreateDialog = () => {
+  newRowData.value = {}
+  tableColumns.value.forEach(col => {
+    newRowData.value[col] = ''
+  })
+  showCreateModal.value = true
+}
+
+const createNewRow = async () => {
+  try {
+    const result = await apiService.crud.createRow(currentTable.value.table_name, newRowData.value)
+    
+    if (result.success) {
+      alert('資料新增成功！')
+      showCreateModal.value = false
+      newRowData.value = {}
+      await loadTableData(pagination.value.current_page)
+    } else {
+      throw new Error(result.error)
+    }
+  } catch (error) {
+    alert('新增失敗：' + error.message)
   }
 }
 
@@ -350,7 +607,7 @@ const saveRecord = (record) => {
   alert('資料已修改，請點擊批次儲存以確認變更')
 }
 
-const cancelEdit = (record) => {
+const cancelRecordEdit = (record) => {
   if (record.originalData) {
     Object.assign(record, record.originalData)
     record.originalData = null
@@ -817,5 +1074,358 @@ button:disabled {
 
 .clear-btn:hover {
   background: #d32f2f;
+}
+
+/* CRUD 管理界面樣式 */
+.data-crud-section {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  margin-top: 20px;
+  overflow: hidden;
+}
+
+.crud-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.crud-header h3 {
+  margin: 0;
+  color: #333;
+  font-size: 18px;
+}
+
+.crud-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.create-btn, .refresh-btn, .close-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.3s;
+}
+
+.create-btn {
+  background: #28a745;
+  color: white;
+}
+
+.refresh-btn {
+  background: #17a2b8;
+  color: white;
+}
+
+.close-btn {
+  background: #6c757d;
+  color: white;
+}
+
+.create-btn:hover {
+  background: #218838;
+}
+
+.refresh-btn:hover {
+  background: #138496;
+}
+
+.close-btn:hover {
+  background: #5a6268;
+}
+
+.search-section {
+  padding: 16px 20px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.search-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.search-btn {
+  padding: 8px 16px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.3s;
+}
+
+.search-btn:hover {
+  background: #0056b3;
+}
+
+.data-table-container {
+  overflow-x: auto;
+  max-height: 600px;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.data-table th,
+.data-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.data-table th {
+  background: #f8f9fa;
+  font-weight: 600;
+  color: #495057;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.data-table tr:hover {
+  background: #f8f9fa;
+}
+
+.edit-cell {
+  padding: 2px;
+}
+
+.edit-input {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid #ced4da;
+  border-radius: 3px;
+  font-size: 13px;
+}
+
+.view-cell {
+  min-height: 20px;
+  word-break: break-word;
+}
+
+.action-cell {
+  width: 100px;
+}
+
+.edit-actions, .view-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.edit-btn, .delete-btn, .save-btn, .cancel-btn {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  min-width: 30px;
+  transition: all 0.3s;
+}
+
+.edit-btn {
+  background: #ffc107;
+  color: #212529;
+}
+
+.delete-btn {
+  background: #dc3545;
+  color: white;
+}
+
+.save-btn {
+  background: #28a745;
+  color: white;
+}
+
+.cancel-btn {
+  background: #6c757d;
+  color: white;
+}
+
+.edit-btn:hover {
+  background: #e0a800;
+}
+
+.delete-btn:hover {
+  background: #c82333;
+}
+
+.save-btn:hover {
+  background: #218838;
+}
+
+.cancel-btn:hover {
+  background: #5a6268;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border-top: 1px solid #dee2e6;
+}
+
+.page-btn {
+  padding: 8px 12px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.3s;
+}
+
+.page-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+}
+
+.page-btn:not(:disabled):hover {
+  background: #0056b3;
+}
+
+.page-info {
+  font-size: 14px;
+  color: #6c757d;
+}
+
+/* 模態框樣式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #333;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: #6c757d;
+  padding: 4px;
+}
+
+.modal-close:hover {
+  color: #343a40;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: #333;
+}
+
+.form-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #dee2e6;
+}
+
+.submit-btn {
+  padding: 8px 16px;
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.3s;
+}
+
+.submit-btn:hover {
+  background: #218838;
+}
+
+.form-actions .cancel-btn {
+  padding: 8px 16px;
+  background: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.3s;
+}
+
+.form-actions .cancel-btn:hover {
+  background: #5a6268;
 }
 </style>
