@@ -744,6 +744,220 @@ def get_table_row_count(table_name):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+# === 數據 CRUD API ===
+
+@app.route('/api/database/tables/<table_name>/data', methods=['GET'])
+@jwt_required()
+def get_table_data(table_name):
+    """
+    分頁查詢表格數據
+    """
+    try:
+        # 檢查資料表是否存在
+        inspector = inspect(engine)
+        if not inspector.has_table(table_name):
+            return jsonify({'success': False, 'error': '找不到指定的資料表'}), 404
+        
+        # 取得查詢參數
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 50))
+        search = request.args.get('search', '')
+        
+        # 計算偏移量
+        offset = (page - 1) * limit
+        
+        # 取得表格欄位資訊
+        columns_info = inspector.get_columns(table_name)
+        columns = [col['name'] for col in columns_info if col['name'] != 'id']
+        
+        session = Session()
+        try:
+            # 構建基礎查詢
+            if search:
+                # 添加搜尋功能 - 在所有文字欄位中搜尋
+                search_conditions = []
+                for col in columns:
+                    search_conditions.append(f'`{col}` LIKE :search')
+                search_query = f"SELECT * FROM `{table_name}` WHERE {' OR '.join(search_conditions)} ORDER BY id LIMIT :limit OFFSET :offset"
+                count_query = f"SELECT COUNT(*) FROM `{table_name}` WHERE {' OR '.join(search_conditions)}"
+                
+                result = session.execute(text(search_query), {'search': f'%{search}%', 'limit': limit, 'offset': offset}).fetchall()
+                total_count = session.execute(text(count_query), {'search': f'%{search}%'}).scalar()
+            else:
+                # 無搜尋條件
+                data_query = f"SELECT * FROM `{table_name}` ORDER BY id LIMIT :limit OFFSET :offset"
+                count_query = f"SELECT COUNT(*) FROM `{table_name}`"
+                
+                result = session.execute(text(data_query), {'limit': limit, 'offset': offset}).fetchall()
+                total_count = session.execute(text(count_query)).scalar()
+            
+            # 轉換結果為字典列表
+            data = []
+            for row in result:
+                row_dict = dict(zip(['id'] + columns, row))
+                data.append(row_dict)
+            
+            # 計算總頁數
+            total_pages = (total_count + limit - 1) // limit
+            
+            return jsonify({
+                'success': True,
+                'data': data,
+                'columns': ['id'] + columns,
+                'pagination': {
+                    'current_page': page,
+                    'total_pages': total_pages,
+                    'total_count': total_count,
+                    'limit': limit,
+                    'has_next': page < total_pages,
+                    'has_prev': page > 1
+                }
+            })
+            
+        finally:
+            session.close()
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/database/tables/<table_name>/data', methods=['POST'])
+@jwt_required()
+def create_table_row(table_name):
+    """
+    新增單筆資料
+    """
+    try:
+        # 檢查資料表是否存在
+        inspector = inspect(engine)
+        if not inspector.has_table(table_name):
+            return jsonify({'success': False, 'error': '找不到指定的資料表'}), 404
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': '缺少資料內容'}), 400
+        
+        # 取得表格欄位資訊（排除 id）
+        columns_info = inspector.get_columns(table_name)
+        columns = [col['name'] for col in columns_info if col['name'] != 'id']
+        
+        session = Session()
+        try:
+            # 構建插入語句
+            placeholders = ', '.join([f':{col}' for col in columns])
+            columns_str = ', '.join([f'`{col}`' for col in columns])
+            insert_query = f"INSERT INTO `{table_name}` ({columns_str}) VALUES ({placeholders})"
+            
+            # 準備插入資料，只保留表格中存在的欄位
+            insert_data = {}
+            for col in columns:
+                insert_data[col] = data.get(col, '')
+            
+            result = session.execute(text(insert_query), insert_data)
+            session.commit()
+            
+            return jsonify({
+                'success': True, 
+                'message': '資料新增成功',
+                'inserted_id': result.lastrowid
+            })
+            
+        finally:
+            session.close()
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/database/tables/<table_name>/data/<int:row_id>', methods=['PUT'])
+@jwt_required()
+def update_table_row(table_name, row_id):
+    """
+    更新指定資料
+    """
+    try:
+        # 檢查資料表是否存在
+        inspector = inspect(engine)
+        if not inspector.has_table(table_name):
+            return jsonify({'success': False, 'error': '找不到指定的資料表'}), 404
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': '缺少資料內容'}), 400
+        
+        # 取得表格欄位資訊（排除 id）
+        columns_info = inspector.get_columns(table_name)
+        columns = [col['name'] for col in columns_info if col['name'] != 'id']
+        
+        session = Session()
+        try:
+            # 檢查資料是否存在
+            check_query = f"SELECT COUNT(*) FROM `{table_name}` WHERE id = :row_id"
+            exists = session.execute(text(check_query), {'row_id': row_id}).scalar()
+            
+            if not exists:
+                return jsonify({'success': False, 'error': '找不到指定的資料'}), 404
+            
+            # 構建更新語句
+            set_clauses = [f'`{col}` = :{col}' for col in columns if col in data]
+            if not set_clauses:
+                return jsonify({'success': False, 'error': '沒有可更新的欄位'}), 400
+            
+            update_query = f"UPDATE `{table_name}` SET {', '.join(set_clauses)} WHERE id = :row_id"
+            
+            # 準備更新資料
+            update_data = {'row_id': row_id}
+            for col in columns:
+                if col in data:
+                    update_data[col] = data[col]
+            
+            session.execute(text(update_query), update_data)
+            session.commit()
+            
+            return jsonify({'success': True, 'message': '資料更新成功'})
+            
+        finally:
+            session.close()
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/database/tables/<table_name>/data/<int:row_id>', methods=['DELETE'])
+@jwt_required()
+def delete_table_row(table_name, row_id):
+    """
+    刪除指定資料
+    """
+    try:
+        # 檢查資料表是否存在
+        inspector = inspect(engine)
+        if not inspector.has_table(table_name):
+            return jsonify({'success': False, 'error': '找不到指定的資料表'}), 404
+        
+        session = Session()
+        try:
+            # 檢查資料是否存在
+            check_query = f"SELECT COUNT(*) FROM `{table_name}` WHERE id = :row_id"
+            exists = session.execute(text(check_query), {'row_id': row_id}).scalar()
+            
+            if not exists:
+                return jsonify({'success': False, 'error': '找不到指定的資料'}), 404
+            
+            # 執行刪除
+            delete_query = f"DELETE FROM `{table_name}` WHERE id = :row_id"
+            session.execute(text(delete_query), {'row_id': row_id})
+            session.commit()
+            
+            return jsonify({'success': True, 'message': '資料刪除成功'})
+            
+        finally:
+            session.close()
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/sheets', methods=['POST'])
 @jwt_required()
 def list_excel_sheets():

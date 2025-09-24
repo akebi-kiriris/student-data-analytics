@@ -106,6 +106,31 @@ export const apiService = {
       }
       return response.json()
     })
+  },
+
+  // CRUD 操作輔助函數
+  crud: {
+    // 獲取表格數據（分頁）
+    getTableData(tableName, params = {}) {
+      const { page = 1, limit = 50, search = '' } = params
+      const queryParams = new URLSearchParams({ page, limit, search })
+      return apiService.get(`/database/tables/${tableName}/data?${queryParams}`)
+    },
+
+    // 新增資料
+    createRow(tableName, data) {
+      return apiService.post(`/database/tables/${tableName}/data`, data)
+    },
+
+    // 更新資料
+    updateRow(tableName, rowId, data) {
+      return apiService.put(`/database/tables/${tableName}/data/${rowId}`, data)
+    },
+
+    // 刪除資料
+    deleteRow(tableName, rowId) {
+      return apiService.delete(`/database/tables/${tableName}/data/${rowId}`)
+    }
   }
 }
 
@@ -136,7 +161,11 @@ export const API_ENDPOINTS = {
     TABLES: '/database_tables',
     TABLE_COLUMNS: '/table_columns',
     NEW_TABLES: '/database/tables',
-    TABLE_COUNT: '/database/tables'
+    TABLE_COUNT: '/database/tables',
+    TABLE_DATA: '/database/tables', // 用於 CRUD 操作
+    CREATE_ROW: '/database/tables',
+    UPDATE_ROW: '/database/tables',
+    DELETE_ROW: '/database/tables'
   },
 
   // 統計分析
@@ -158,5 +187,8 @@ export const API_ENDPOINTS = {
   },
   
   // 前20大入學高中
-  TOP_SCHOOLS_STATS: '/top_schools_stats'
+  TOP_SCHOOLS_STATS: '/top_schools_stats',
+  
+  // 大一各科平均成績
+  SUBJECT_AVERAGE_STATS: '/subject_average_stats'
 }

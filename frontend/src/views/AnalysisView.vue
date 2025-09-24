@@ -171,6 +171,19 @@
           </div>
           <p>統計並排名入學生數量最多的前20所高中</p>
         </div>
+
+        <!-- 大一各科平均成績 -->
+        <div 
+          class="analysis-block" 
+          :class="{ active: activeBlock === 'subject-average' }"
+          @click="setActiveBlock('subject-average')"
+        >
+          <div class="block-header">
+            <span class="nav-icon">📊</span>
+            <h3>大一各科平均成績</h3>
+          </div>
+          <p>分析107-113年度大一各科目平均成績趨勢變化</p>
+        </div>
       </div>
 
       <!-- 分析內容區塊 -->
@@ -385,6 +398,17 @@
         </div>
         <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
           <strong>說明：</strong>統計各高中的入學生累計人數，列出前20名高中及其人數分布。如選擇年份欄位，將同時顯示各年度的詳細數據。
+        </div>
+      </div>
+
+      <!-- 大一各科平均成績分析區塊 -->
+      <div v-if="activeBlock === 'subject-average'" class="analysis-content">
+        <el-divider>大一各科平均成績分析</el-divider>
+        <div class="button-group">
+          <el-button type="success" @click="getSubjectAverageStats">分析大一各科平均成績</el-button>
+        </div>
+        <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
+          <strong>說明：</strong>分析107-113年度大一各科目（會計學、計算機概論、微積分、基礎程式設計、統計1、經濟學、程式設計、管理學、統計2）的平均成績趨勢。
         </div>
       </div>
 
@@ -881,6 +905,156 @@
             </el-table-column>
           </el-table>
         </div>
+
+        <!-- 大一各科平均成績分析結果 -->
+        <div v-if="subjectAverageStats" class="stats-card">
+          <el-divider>大一各科平均成績分析結果</el-divider>
+          <div class="stats-summary">
+            <div class="summary-row">
+              <p><strong>分析期間：</strong>{{ subjectAverageStats.year_range }}</p>
+              <p><strong>總學生數：</strong>{{ subjectAverageStats.total_students }} 人</p>
+            </div>
+            
+            <div class="summary-row">
+              <p v-if="subjectAverageStats.highest_subject"><strong>最高平均成績：</strong>{{ subjectAverageStats.highest_subject.subject }} ({{ subjectAverageStats.highest_subject.average }} 分)</p>
+              <p v-if="subjectAverageStats.lowest_subject"><strong>最低平均成績：</strong>{{ subjectAverageStats.lowest_subject.subject }} ({{ subjectAverageStats.lowest_subject.average }} 分)</p>
+            </div>
+            
+            <div class="summary-row">
+              <p v-if="subjectAverageStats.gender_summary"><strong>性別比例：</strong>
+                男性 {{ subjectAverageStats.gender_summary.男性 }} 人 
+                ({{ Math.round((subjectAverageStats.gender_summary.男性 / subjectAverageStats.total_students) * 100) }}%)，
+                女性 {{ subjectAverageStats.gender_summary.女性 }} 人 
+                ({{ Math.round((subjectAverageStats.gender_summary.女性 / subjectAverageStats.total_students) * 100) }}%)
+              </p>
+            </div>
+            
+            <div class="summary-row" v-if="subjectAverageStats.school_type_summary">
+              <p><strong>主要高中類型：</strong>
+                <span v-for="(count, type) in subjectAverageStats.school_type_summary" :key="type" style="margin-right: 10px;">
+                  {{ type }} {{ count }}人 ({{ Math.round((count / subjectAverageStats.total_students) * 100) }}%)
+                </span>
+              </p>
+            </div>
+            
+            <div class="summary-row" v-if="subjectAverageStats.admission_summary">
+              <p><strong>主要入學管道：</strong>
+                <span v-for="(count, type) in subjectAverageStats.admission_summary" :key="type" style="margin-right: 10px;">
+                  {{ type }} {{ count }}人 ({{ Math.round((count / subjectAverageStats.total_students) * 100) }}%)
+                </span>
+              </p>
+            </div>
+          </div>
+          
+          <div class="chart-with-export">
+            <div id="subjectAverageChart" style="width: 100%; height: 600px;"></div>
+            <el-button 
+              type="primary" 
+              class="export-btn"
+              @click="showEChartsExportDialog('subjectAverageChart', '大一各科平均成績', subjectAverageStats)"
+              icon="Download"
+            >
+              📊 導出圖表
+            </el-button>
+          </div>
+          
+          <el-divider v-if="subjectAverageStats.yearly_data && subjectAverageStats.yearly_data.length > 0">各年度詳細統計數據</el-divider>
+          <el-table 
+            v-if="subjectAverageStats.yearly_data && subjectAverageStats.yearly_data.length > 0"
+            :data="subjectAverageStats.yearly_data" 
+            stripe 
+            border 
+            style="width: 100%"
+            max-height="500"
+          >
+            <!-- 年度 -->
+            <el-table-column prop="年度" label="年度" width="80" align="center" fixed="left">
+              <template #default="scope">
+                <strong>{{ scope.row.年度 }}</strong>
+              </template>
+            </el-table-column>
+            
+            <!-- 人數統計 -->
+            <el-table-column label="人數統計" align="center">
+              <el-table-column prop="總人數" label="總人數" width="80" align="center">
+                <template #default="scope">
+                  <strong style="color: #409eff;">{{ scope.row.總人數 }}</strong>
+                </template>
+              </el-table-column>
+              <el-table-column prop="男性人數" label="男性" width="70" align="center">
+                <template #default="scope">
+                  <span style="color: #67c23a;">{{ scope.row.男性人數 }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="女性人數" label="女性" width="70" align="center">
+                <template #default="scope">
+                  <span style="color: #f56c6c;">{{ scope.row.女性人數 }}</span>
+                </template>
+              </el-table-column>
+            </el-table-column>
+            
+            <!-- 高中別統計 -->
+            <el-table-column label="高中別統計" align="center">
+              <el-table-column 
+                v-for="schoolType in subjectAverageStats.school_types" 
+                :key="schoolType"
+                :prop="`${schoolType}人數`" 
+                :label="schoolType"
+                width="60"
+                align="center"
+              >
+                <template #default="scope">
+                  <span v-if="scope.row[`${schoolType}人數`] > 0">
+                    {{ scope.row[`${schoolType}人數`] }}
+                  </span>
+                  <span v-else style="color: #ccc;">-</span>
+                </template>
+              </el-table-column>
+            </el-table-column>
+            
+            <!-- 入學管道統計 -->
+            <el-table-column label="入學管道統計" align="center">
+              <el-table-column 
+                v-for="admissionType in subjectAverageStats.admission_types" 
+                :key="admissionType"
+                :prop="`${admissionType}人數`" 
+                :label="admissionType"
+                width="70"
+                align="center"
+              >
+                <template #default="scope">
+                  <span v-if="scope.row[`${admissionType}人數`] > 0">
+                    {{ scope.row[`${admissionType}人數`] }}
+                  </span>
+                  <span v-else style="color: #ccc;">-</span>
+                </template>
+              </el-table-column>
+            </el-table-column>
+            
+            <!-- 各科平均成績 -->
+            <el-table-column label="各科平均成績" align="center">
+              <el-table-column 
+                v-for="subject in subjectAverageStats.subjects" 
+                :key="subject" 
+                :prop="subject" 
+                :label="subject"
+                width="80"
+                align="center"
+              >
+                <template #default="scope">
+                  <span v-if="scope.row[subject] !== null" :style="{
+                    color: scope.row[subject] >= 80 ? '#67c23a' : 
+                           scope.row[subject] >= 70 ? '#e6a23c' : 
+                           scope.row[subject] >= 60 ? '#f56c6c' : '#909399'
+                  }">
+                    {{ scope.row[subject] }}
+                  </span>
+                  <span v-else style="color: #ccc;">-</span>
+                </template>
+              </el-table-column>
+            </el-table-column>
+          </el-table>
+        </div>
       </div>
 
       <!-- 原始資料表格 -->
@@ -1018,6 +1192,7 @@ const schoolSourceStats = ref(null)
 const admissionMethodStats = ref(null)
 const geoStats = ref(null)
 const topSchoolsStats = ref(null)
+const subjectAverageStats = ref(null)
 const rawData = ref([])
 
 // 圖表實例
@@ -1029,6 +1204,7 @@ let admissionMethodChartInstance = null
 let geoChartInstance = null
 let geoDetailedChartInstances = {}
 let topSchoolsChartInstance = null
+let subjectAverageChartInstance = null
 
 // 清理函數
 const cleanupFunctions = []
@@ -1509,6 +1685,43 @@ const getTopSchoolsStats = async () => {
     renderTopSchoolsChart()
   } catch (error) {
     ElMessage.error('前20大入學高中分析失敗')
+    console.error(error)
+  }
+}
+
+// 大一各科平均成績分析
+const getSubjectAverageStats = async () => {
+  try {
+    console.log('大一各科平均成績分析請求')
+    
+    const requestData = {
+      table_name: selectedTable.value
+    }
+    
+    console.log('大一各科平均成績分析請求參數:', requestData)
+    
+    const data = await apiService.post(API_ENDPOINTS.SUBJECT_AVERAGE_STATS, requestData)
+    
+    console.log('大一各科平均成績分析結果:', data)
+    
+    subjectAverageStats.value = data
+    currentStats.value = data
+    
+    // 等待 DOM 更新
+    await nextTick()
+    
+    // 初始化圖表
+    const chartDom = document.getElementById('subjectAverageChart')
+    if (chartDom) {
+      if (subjectAverageChartInstance) {
+        subjectAverageChartInstance.dispose()
+      }
+      subjectAverageChartInstance = echarts.init(chartDom)
+    }
+    
+    renderSubjectAverageChart()
+  } catch (error) {
+    ElMessage.error('大一各科平均成績分析失敗')
     console.error(error)
   }
 }
@@ -3023,6 +3236,131 @@ const renderTopSchoolsChart = () => {
   }
 }
 
+// 渲染大一各科平均成績圖表
+const renderSubjectAverageChart = () => {
+  if (!subjectAverageChartInstance || !subjectAverageStats.value) return
+  
+  try {
+    const data = subjectAverageStats.value
+    
+    // 準備圖表數據
+    const categories = data.years || []
+    const series = []
+    
+    // 為每個科目創建一條線
+    const colors = [
+      '#ff7f7f', '#87ceeb', '#98fb98', '#f0e68c', '#dda0dd',
+      '#ffa07a', '#20b2aa', '#87cefa', '#ffd700', '#ff69b4'
+    ]
+    
+    data.subjects.forEach((subject, index) => {
+      const subjectData = []
+      
+      data.yearly_data.forEach(yearData => {
+        const score = yearData[subject]
+        subjectData.push(score !== null ? score : null)
+      })
+      
+      series.push({
+        name: subject,
+        type: 'line',
+        data: subjectData,
+        symbol: 'circle',
+        symbolSize: 6,
+        lineStyle: {
+          width: 2
+        },
+        itemStyle: {
+          color: colors[index % colors.length]
+        },
+        connectNulls: false // 不連接 null 值
+      })
+    })
+    
+    const option = {
+      title: {
+        text: '大一各科平均成績趨勢',
+        left: 'center',
+        textStyle: {
+          fontSize: 18,
+          fontWeight: 'bold'
+        }
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'cross'
+        },
+        formatter: (params) => {
+          let result = `<strong>${params[0].axisValue}年</strong><br/>`
+          params.forEach(param => {
+            if (param.value !== null) {
+              result += `${param.seriesName}: <strong>${param.value}分</strong><br/>`
+            }
+          })
+          return result
+        }
+      },
+      legend: {
+        data: data.subjects,
+        top: '10%',
+        type: 'scroll',
+        orient: 'horizontal'
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '10%',
+        top: '25%',
+        containLabel: true
+      },
+      toolbox: {
+        feature: {
+          saveAsImage: { title: '保存圖片' },
+          restore: { title: '還原' },
+          dataZoom: { title: { zoom: '區域縮放', back: '縮放還原' } }
+        },
+        top: '5%',
+        right: '2%'
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: categories,
+        axisLabel: {
+          fontSize: 12
+        },
+        name: '年度',
+        nameLocation: 'middle',
+        nameGap: 25
+      },
+      yAxis: {
+        type: 'value',
+        name: '平均成績',
+        nameLocation: 'middle',
+        nameGap: 40,
+        axisLabel: {
+          formatter: '{value}分',
+          fontSize: 12
+        },
+        splitLine: {
+          lineStyle: {
+            type: 'dashed',
+            opacity: 0.5
+          }
+        }
+      },
+      series: series,
+      animationDuration: 1500,
+      animationEasing: 'cubicOut'
+    }
+    
+    subjectAverageChartInstance.setOption(option)
+  } catch (error) {
+    console.error('渲染大一各科平均成績圖表時出錯:', error)
+  }
+}
+
 // 格式化區域表格數據
 const formatRegionTableData = (region) => {
   if (!geoStats.value || !geoStats.value.detailed || !geoStats.value.detailed[region]) return []
@@ -3434,6 +3772,19 @@ onMounted(() => {
   padding: 15px;
   background: #f8f9fa;
   border-radius: 8px;
+}
+
+.summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  margin-bottom: 8px;
+}
+
+.summary-row p {
+  margin: 0;
+  flex: 1;
+  min-width: 300px;
 }
 
 .form-group {
