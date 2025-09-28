@@ -2154,5 +2154,204 @@ def subject_average_stats():
             session.close()
 
 
+@app.route('/api/analysis/gender-subject', methods=['POST'])
+@jwt_required()
+def gender_subject_analysis():
+    """
+    性別科目成績分析 API
+    支援多科目選擇，分析男女生在各科目間的成績差異
+    """
+    try:
+        data = request.get_json()
+        table_name = data.get('table_name')
+        year_col = data.get('year_col')
+        gender_col = data.get('gender_col')
+        subject_cols = data.get('subjects', [])
+        years_filter = data.get('years', [])
+        
+        print(f"[gender_subject_analysis] 開始分析，表格: {table_name}")
+        print(f"[gender_subject_analysis] 年度欄位: {year_col}, 性別欄位: {gender_col}")
+        print(f"[gender_subject_analysis] 科目欄位: {subject_cols}")
+        print(f"[gender_subject_analysis] 年份篩選: {years_filter}")
+        
+        if not all([table_name, year_col, gender_col, subject_cols]):
+            return jsonify({'error': '缺少必要參數'}), 400
+        
+        if not isinstance(subject_cols, list) or len(subject_cols) == 0:
+            return jsonify({'error': '請至少選擇一個科目'}), 400
+        
+        # 建立資料庫連接
+        engine = create_engine('sqlite:///database/excel_data.db')
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        
+        # 檢查表格是否存在
+        inspector = inspect(engine)
+        if table_name not in inspector.get_table_names():
+            return jsonify({'error': f'表格 {table_name} 不存在'}), 404
+        
+        # 獲取表格欄位資訊
+        columns_info = inspector.get_columns(table_name)
+        available_columns = [col['name'] for col in columns_info]
+        
+        print(f"[gender_subject_analysis] 可用欄位: {available_columns}")
+        
+        # 安全化欄位名稱
+        safe_year_col = year_col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
+        safe_gender_col = gender_col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
+        safe_subject_cols = []
+        
+        for col in subject_cols:
+            safe_col = col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
+            if safe_col in available_columns:
+                safe_subject_cols.append({'original': col, 'safe': safe_col})
+            else:
+                print(f"[gender_subject_analysis] 警告：科目欄位 '{col}' 不存在")
+        
+        if not safe_subject_cols:
+            return jsonify({'error': '沒有找到有效的科目欄位'}), 400
+        
+        # 檢查必要欄位是否存在
+        if safe_year_col not in available_columns:
+            return jsonify({'error': f'年度欄位 {year_col} 不存在'}), 400
+        if safe_gender_col not in available_columns:
+            return jsonify({'error': f'性別欄位 {gender_col} 不存在'}), 400
+        
+        # 建構 SQL 查詢 - 包含年度、性別和所有科目欄位
+        select_cols = [f'"{safe_year_col}"', f'"{safe_gender_col}"']
+        select_cols.extend([f'"{subject["safe"]}"' for subject in safe_subject_cols])
+        
+        # 建構 WHERE 條件
+        where_conditions = [
+            f'"{safe_year_col}" IS NOT NULL',
+            f'"{safe_year_col}" != ""',
+            f'"{safe_gender_col}" IS NOT NULL',
+            f'"{safe_gender_col}" != ""'
+        ]
+        
+        # 如果有年份篩選，添加年份條件
+        if years_filter and len(years_filter) > 0:
+            years_str = ', '.join([str(year) for year in years_filter])
+            where_conditions.append(f'"{safe_year_col}" IN ({years_str})')
+        
+        query = text(f'''
+            SELECT {", ".join(select_cols)}
+            FROM "{table_name}" 
+            WHERE {" AND ".join(where_conditions)}
+        ''')
+        
+        print(f"[gender_subject_analysis] 執行查詢: {query}")
+        result = session.execute(query)
+        
+        # 建立 DataFrame
+        column_names = [safe_year_col, safe_gender_col] + [subject['safe'] for subject in safe_subject_cols]
+        df = pd.DataFrame(result.fetchall(), columns=column_names)
+        
+        if df.empty:
+            return jsonify({'error': '沒有找到符合條件的資料'}), 404
+        
+        print(f"[gender_subject_analysis] 查詢到 {len(df)} 筆資料")
+        
+        # 資料清理和標準化
+        df[safe_year_col] = pd.to_numeric(df[safe_year_col], errors='coerce')
+        df = df.dropna(subset=[safe_year_col])
+        
+        # 性別資料標準化
+        df[safe_gender_col] = df[safe_gender_col].astype(str).str.strip().str.upper()
+        gender_mapping = {
+            'M': '男', 'MALE': '男', '男': '男', '男生': '男', '1': '男',
+            'F': '女', 'FEMALE': '女', '女': '女', '女生': '女', '0': '女'
+        }
+        df[safe_gender_col] = df[safe_gender_col].replace(gender_mapping)
+        
+        # 只保留有效的性別資料
+        df = df[df[safe_gender_col].isin(['男', '女'])]
+        
+        if df.empty:
+            return jsonify({'error': '沒有找到有效的性別資料'}), 404
+        
+        # 科目成績資料轉為數值
+        for subject in safe_subject_cols:
+            df[subject['safe']] = pd.to_numeric(df[subject['safe']], errors='coerce')
+        
+        # 分析結果結構
+        analysis_results = {
+            'subjects': [subject['original'] for subject in safe_subject_cols],
+            'year_range': f"{df[safe_year_col].min()}-{df[safe_year_col].max()}",
+            'total_records': len(df),
+            'subject_details': {},
+            'overall_summary': {}
+        }
+        
+        # 整體男女平均成績
+        overall_male_scores = []
+        overall_female_scores = []
+        
+        # 逐科目分析
+        for subject in safe_subject_cols:
+            subject_name = subject['original']
+            subject_col = subject['safe']
+            
+            # 過濾有效成績
+            subject_df = df[[safe_year_col, safe_gender_col, subject_col]].dropna()
+            
+            if subject_df.empty:
+                continue
+            
+            # 年度分組分析
+            yearly_stats = []
+            years = sorted(subject_df[safe_year_col].unique())
+            
+            for year in years:
+                year_data = subject_df[subject_df[safe_year_col] == year]
+                
+                male_data = year_data[year_data[safe_gender_col] == '男'][subject_col]
+                female_data = year_data[year_data[safe_gender_col] == '女'][subject_col]
+                
+                male_avg = male_data.mean() if len(male_data) > 0 else None
+                female_avg = female_data.mean() if len(female_data) > 0 else None
+                
+                yearly_stats.append({
+                    'year': int(year),
+                    'male_avg': round(male_avg, 2) if male_avg is not None else None,
+                    'female_avg': round(female_avg, 2) if female_avg is not None else None,
+                    'male_count': len(male_data),
+                    'female_count': len(female_data),
+                    'difference': round(male_avg - female_avg, 2) if male_avg is not None and female_avg is not None else None
+                })
+                
+                # 收集整體統計用的資料
+                if male_avg is not None:
+                    overall_male_scores.extend(male_data.tolist())
+                if female_avg is not None:
+                    overall_female_scores.extend(female_data.tolist())
+            
+            analysis_results['subject_details'][subject_name] = yearly_stats
+        
+        # 計算整體統計
+        if overall_male_scores and overall_female_scores:
+            analysis_results['overall_summary'] = {
+                'male_avg': round(sum(overall_male_scores) / len(overall_male_scores), 2),
+                'female_avg': round(sum(overall_female_scores) / len(overall_female_scores), 2),
+                'total_male_records': len(overall_male_scores),
+                'total_female_records': len(overall_female_scores)
+            }
+            
+            # 計算整體差異
+            overall_diff = analysis_results['overall_summary']['male_avg'] - analysis_results['overall_summary']['female_avg']
+            analysis_results['overall_summary']['difference'] = round(overall_diff, 2)
+        
+        print(f"[gender_subject_analysis] 分析完成，涵蓋 {len(safe_subject_cols)} 科目")
+        return jsonify(analysis_results)
+        
+    except Exception as e:
+        print(f"[gender_subject_analysis] Error: {str(e)}")
+        return jsonify({'error': f'分析過程發生錯誤: {str(e)}'}), 500
+    
+    finally:
+        if 'session' in locals():
+            session.close()
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

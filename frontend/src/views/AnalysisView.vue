@@ -184,6 +184,19 @@
           </div>
           <p>分析107-113年度大一各科目平均成績趨勢變化</p>
         </div>
+
+        <!-- 性別科目成績分析 -->
+        <div 
+          class="analysis-block" 
+          :class="{ active: activeBlock === 'gender-subject' }"
+          @click="setActiveBlock('gender-subject')"
+        >
+          <div class="block-header">
+            <span class="nav-icon">⚖️</span>
+            <h3>性別科目成績分析</h3>
+          </div>
+          <p>比較男女生在各科目的平均成績差異，支援多科目同時分析</p>
+        </div>
       </div>
 
       <!-- 分析內容區塊 -->
@@ -409,6 +422,191 @@
         </div>
         <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
           <strong>說明：</strong>分析107-113年度大一各科目（會計學、計算機概論、微積分、基礎程式設計、統計1、經濟學、程式設計、管理學、統計2）的平均成績趨勢。
+        </div>
+      </div>
+
+      <!-- 性別科目成績分析區塊 -->
+      <div v-if="activeBlock === 'gender-subject'" class="analysis-content">
+        <el-divider>性別科目成績分析</el-divider>
+        
+        <div class="form-group">
+          <label>年度欄位：</label>
+          <el-select v-model="genderSubjectYearCol" placeholder="自動選擇年度欄位" style="width: 300px" :disabled="columns.length === 0">
+            <el-option
+              v-for="col in columns"
+              :key="col"
+              :label="col"
+              :value="col"
+            />
+          </el-select>
+        </div>
+
+        <div class="form-group">
+          <label>性別欄位：</label>
+          <el-select v-model="genderSubjectGenderCol" placeholder="自動選擇性別欄位" style="width: 300px" :disabled="columns.length === 0">
+            <el-option
+              v-for="col in columns"
+              :key="col"
+              :label="col"
+              :value="col"
+            />
+          </el-select>
+        </div>
+
+        <div class="form-group">
+          <label>科目欄位（可多選）：</label>
+          <el-select 
+            v-model="selectedSubjects" 
+            multiple 
+            placeholder="選擇要分析的科目" 
+            style="width: 100%; max-width: 600px" 
+            :disabled="columns.length === 0"
+          >
+            <el-option
+              v-for="col in numericColumns"
+              :key="col"
+              :label="col"
+              :value="col"
+            />
+          </el-select>
+        </div>
+
+        <div class="form-group">
+          <label>年份篩選：</label>
+          <el-select 
+            v-model="selectedYears" 
+            multiple 
+            placeholder="選擇年份（留空表示所有年份）" 
+            style="width: 100%; max-width: 600px"
+            clearable
+          >
+            <el-option
+              v-for="year in availableYears"
+              :key="year"
+              :label="year"
+              :value="year"
+            />
+          </el-select>
+        </div>
+
+        <div class="button-group">
+          <el-button 
+            type="success" 
+            @click="getGenderSubjectStats"
+            :disabled="!genderSubjectYearCol || !genderSubjectGenderCol || !selectedSubjects || selectedSubjects.length === 0"
+          >
+            分析性別科目成績差異
+          </el-button>
+        </div>
+        
+        <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
+          <strong>說明：</strong>選擇年度欄位、性別欄位和一個或多個科目，系統將分析各年度男女生在選定科目的平均成績差異，並生成對比圖表和詳細統計表格。
+        </div>
+        
+        <!-- 性別科目成績分析結果 -->
+        <div v-if="genderSubjectStats" class="results-panel">
+          <div class="statistics-summary">
+            <div class="stat-card">
+              <h4>📊 分析概況</h4>
+              <p><strong>分析科目：</strong>{{ genderSubjectStats.subjects ? genderSubjectStats.subjects.join('、') : '-' }}</p>
+              <p><strong>年度範圍：</strong>{{ genderSubjectStats.years ? genderSubjectStats.years[0] + ' - ' + genderSubjectStats.years[genderSubjectStats.years.length-1] : '-' }}</p>
+              <p><strong>性別欄位：</strong>{{ genderSubjectGenderCol }}</p>
+            </div>
+          </div>
+          
+          <div class="chart-with-export">
+            <div id="genderSubjectChart" style="width: 100%; height: 600px;"></div>
+            <el-button 
+              type="primary" 
+              class="export-btn"
+              @click="showEChartsExportDialog('genderSubjectChart', '性別科目成績差異分析', genderSubjectStats)"
+              icon="Download"
+            >
+              📊 導出圖表
+            </el-button>
+          </div>
+          
+          <el-divider v-if="genderSubjectStats && genderSubjectStats.subjects">各年度性別科目詳細統計數據</el-divider>
+          
+          <div v-if="genderSubjectStats && genderSubjectStats.subjects" style="margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
+            <strong>說明：</strong>
+            <ul style="margin: 8px 0; padding-left: 20px;">
+              <li>表格顯示各年度各科目的男女生平均成績對比</li>
+              <li><span style="color: #67c23a;">■</span> 80分以上 <span style="color: #e6a23c;">■</span> 70-79分 <span style="color: #f56c6c;">■</span> 60-69分 <span style="color: #909399;">■</span> 60分以下</li>
+              <li>差異欄位：正值表示男生成績較高，負值表示女生成績較高</li>
+            </ul>
+          </div>
+          <el-table 
+            v-if="genderSubjectStats && genderSubjectStats.subjects"
+            :data="genderSubjectTableData" 
+            stripe 
+            border 
+            style="width: 100%"
+            max-height="500"
+          >
+            <!-- 年度 -->
+            <el-table-column prop="year" label="年度" width="80" align="center" fixed="left">
+              <template #default="scope">
+                <strong>{{ scope.row.year }}</strong>
+              </template>
+            </el-table-column>
+            
+            <!-- 各科目的男女成績對比 -->
+            <el-table-column 
+              v-for="subject in genderSubjectStats.subjects" 
+              :key="subject" 
+              :label="subject"
+              align="center"
+            >
+              <el-table-column 
+                label="男生平均"
+                width="90"
+                align="center"
+              >
+                <template #default="scope">
+                  <span v-if="scope.row[subject] && scope.row[subject].male_avg !== null" :style="{
+                    color: parseFloat(scope.row[subject].male_avg) >= 80 ? '#67c23a' : 
+                           parseFloat(scope.row[subject].male_avg) >= 70 ? '#e6a23c' : 
+                           parseFloat(scope.row[subject].male_avg) >= 60 ? '#f56c6c' : '#909399'
+                  }">
+                    {{ scope.row[subject].male_avg }}
+                  </span>
+                  <span v-else style="color: #ccc;">-</span>
+                </template>
+              </el-table-column>
+              <el-table-column 
+                label="女生平均"
+                width="90"
+                align="center"
+              >
+                <template #default="scope">
+                  <span v-if="scope.row[subject] && scope.row[subject].female_avg !== null" :style="{
+                    color: parseFloat(scope.row[subject].female_avg) >= 80 ? '#67c23a' : 
+                           parseFloat(scope.row[subject].female_avg) >= 70 ? '#e6a23c' : 
+                           parseFloat(scope.row[subject].female_avg) >= 60 ? '#f56c6c' : '#909399'
+                  }">
+                    {{ scope.row[subject].female_avg }}
+                  </span>
+                  <span v-else style="color: #ccc;">-</span>
+                </template>
+              </el-table-column>
+              <el-table-column 
+                label="差異"
+                width="70"
+                align="center"
+              >
+                <template #default="scope">
+                  <span v-if="scope.row[subject] && scope.row[subject].difference !== null" :style="{
+                    color: Math.abs(parseFloat(scope.row[subject].difference)) > 5 ? '#f56c6c' : 
+                           Math.abs(parseFloat(scope.row[subject].difference)) > 2 ? '#e6a23c' : '#67c23a'
+                  }">
+                    {{ scope.row[subject].difference > 0 ? '+' : '' }}{{ scope.row[subject].difference }}
+                  </span>
+                  <span v-else style="color: #ccc;">-</span>
+                </template>
+              </el-table-column>
+            </el-table-column>
+          </el-table>
         </div>
       </div>
 
@@ -1125,7 +1323,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, watch, onBeforeUnmount } from 'vue'
+import { ref, onMounted, nextTick, watch, onBeforeUnmount, computed } from 'vue'
 import { UploadFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
@@ -1183,6 +1381,12 @@ const geoRegionCol = ref('')
 const genderCol = ref('')
 const topSchoolsCol = ref('')
 const topSchoolsYearCol = ref('')
+// 性別科目分析相關變數
+const genderSubjectYearCol = ref('')
+const genderSubjectGenderCol = ref('')
+const selectedYears = ref([])
+const availableYears = ref([])
+const genderSubjectStats = ref(null)
 const activeBlock = ref('')
 const currentStats = ref(null)
 const columnStats = ref(null)
@@ -1205,6 +1409,56 @@ let geoChartInstance = null
 let geoDetailedChartInstances = {}
 let topSchoolsChartInstance = null
 let subjectAverageChartInstance = null
+let genderSubjectChartInstance = null
+
+// 計算屬性
+const numericColumns = computed(() => {
+  if (!columns.value || columns.value.length === 0) return []
+  
+  // 只排除明顯不適合作為分析欄位的欄位，讓使用者自己選擇其他欄位
+  return columns.value.filter(col => {
+    // 排除 id 欄位
+    return col !== 'id' && col !== 'ID'
+  })
+})
+
+// 性別科目表格數據
+const genderSubjectTableData = computed(() => {
+  if (!genderSubjectStats.value || !genderSubjectStats.value.subject_details) return []
+  
+  // 獲取所有年份
+  const firstSubject = genderSubjectStats.value.subjects[0]
+  const firstSubjectData = genderSubjectStats.value.subject_details[firstSubject] || []
+  const years = firstSubjectData.map(item => item.year)
+  
+  // 為每一年創建一行數據
+  return years.map(year => {
+    const rowData = { year }
+    
+    // 為每個科目添加數據
+    genderSubjectStats.value.subjects.forEach(subject => {
+      const subjectData = genderSubjectStats.value.subject_details[subject] || []
+      const yearData = subjectData.find(item => item.year === year)
+      
+      if (yearData) {
+        rowData[subject] = {
+          male_avg: yearData.male_avg !== null ? yearData.male_avg.toFixed(1) : null,
+          female_avg: yearData.female_avg !== null ? yearData.female_avg.toFixed(1) : null,
+          difference: (yearData.male_avg !== null && yearData.female_avg !== null) 
+            ? (yearData.male_avg - yearData.female_avg).toFixed(1) : null
+        }
+      } else {
+        rowData[subject] = {
+          male_avg: null,
+          female_avg: null,
+          difference: null
+        }
+      }
+    })
+    
+    return rowData
+  })
+})
 
 // 清理函數
 const cleanupFunctions = []
@@ -1221,6 +1475,8 @@ const setActiveBlock = (blockName) => {
   admissionMethodStats.value = null
   geoStats.value = null
   topSchoolsStats.value = null
+  subjectAverageStats.value = null
+  genderSubjectStats.value = null
   rawData.value = []
   
   // 清理圖表
@@ -1318,13 +1574,45 @@ const loadTableColumns = async () => {
     geoYearCol.value = ''
     geoRegionCol.value = ''
     genderCol.value = ''
+    genderSubjectYearCol.value = ''
+    genderSubjectGenderCol.value = ''
     
     // 自動選擇合適的欄位
     autoSelectColumns()
     
+    // 載入可用年份
+    loadAvailableYears()
+    
   } catch (error) {
     console.error('載入表格欄位失敗:', error)
     ElMessage.error('載入表格欄位失敗')
+  }
+}
+
+// 載入可用年份
+const loadAvailableYears = async () => {
+  if (!selectedTable.value || !genderSubjectYearCol.value) return
+  
+  try {
+    // 使用apiService來確保正確的token處理
+    const data = await apiService.get(`/database/tables/${selectedTable.value}/data?limit=1000`)
+    
+    console.log('載入年份API回應:', data)
+    
+    if (data.success && data.data && Array.isArray(data.data)) {
+      const years = [...new Set(data.data
+        .map(row => row[genderSubjectYearCol.value])
+        .filter(year => year !== null && year !== undefined && year !== ''))]
+        .sort((a, b) => Number(a) - Number(b))
+      availableYears.value = years
+      console.log('可用年份:', years)
+    } else {
+      console.warn('API回應格式不正確:', data)
+      availableYears.value = []
+    }
+  } catch (error) {
+    console.error('載入可用年份失敗:', error)
+    availableYears.value = []
   }
 }
 
@@ -1382,6 +1670,8 @@ const autoSelectColumns = () => {
     schoolSourceYearCol.value = yearColumns[0]
     admissionMethodYearCol.value = yearColumns[0]
     geoYearCol.value = yearColumns[0]
+    // 設置性別科目分析的年度欄位
+    genderSubjectYearCol.value = yearColumns[0]
   }
   
   // 自動選擇學校欄位（按優先級排序）
@@ -1446,7 +1736,8 @@ const autoSelectColumns = () => {
   })
   if (genderColumns.length > 0) {
     genderCol.value = genderColumns[0]
-
+    // 同時設置性別科目分析的性別欄位
+    genderSubjectGenderCol.value = genderColumns[0]
   }
   
   // 自動選擇地區欄位
@@ -1722,6 +2013,57 @@ const getSubjectAverageStats = async () => {
     renderSubjectAverageChart()
   } catch (error) {
     ElMessage.error('大一各科平均成績分析失敗')
+    console.error(error)
+  }
+}
+
+// 性別科目成績分析
+const getGenderSubjectStats = async () => {
+  try {
+    console.log('性別科目成績分析請求')
+    console.log('selectedSubjects.value:', selectedSubjects.value)
+    console.log('numericColumns.value:', numericColumns.value)
+    console.log('columns.value:', columns.value)
+    console.log('genderSubjectYearCol.value:', genderSubjectYearCol.value)
+    console.log('genderSubjectGenderCol.value:', genderSubjectGenderCol.value)
+    
+    if (!genderSubjectYearCol.value || !genderSubjectGenderCol.value || !selectedSubjects.value || selectedSubjects.value.length === 0) {
+      ElMessage.error('請選擇年度欄位、性別欄位和科目')
+      return
+    }
+    
+    const requestData = {
+      table_name: selectedTable.value,
+      year_col: genderSubjectYearCol.value,
+      gender_col: genderSubjectGenderCol.value,
+      subjects: selectedSubjects.value,
+      years: selectedYears.value && selectedYears.value.length > 0 ? selectedYears.value : null
+    }
+    
+    console.log('性別科目成績分析請求參數:', requestData)
+    
+    const data = await apiService.post(API_ENDPOINTS.GENDER_SUBJECT_STATS, requestData)
+    
+    console.log('性別科目成績分析結果:', data)
+    
+    genderSubjectStats.value = data
+    currentStats.value = data
+    
+    // 等待 DOM 更新
+    await nextTick()
+    
+    // 初始化圖表
+    const chartDom = document.getElementById('genderSubjectChart')
+    if (chartDom) {
+      if (genderSubjectChartInstance) {
+        genderSubjectChartInstance.dispose()
+      }
+      genderSubjectChartInstance = echarts.init(chartDom)
+    }
+    
+    renderGenderSubjectChart()
+  } catch (error) {
+    ElMessage.error('性別科目成績分析失敗')
     console.error(error)
   }
 }
@@ -3361,6 +3703,211 @@ const renderSubjectAverageChart = () => {
   }
 }
 
+// 性別科目成績分析圖表
+const renderGenderSubjectChart = () => {
+  if (!genderSubjectChartInstance || !genderSubjectStats.value) return
+  
+  try {
+    const data = genderSubjectStats.value
+    
+    // 準備圖表數據 - 創建年度+科目的組合分類
+    const firstSubject = data.subjects[0]
+    const firstSubjectData = data.subject_details[firstSubject] || []
+    const years = firstSubjectData.map(item => item.year)
+    
+    // 創建年度+科目的分類標籤
+    const categories = []
+    years.forEach(year => {
+      data.subjects.forEach(subject => {
+        categories.push(`${year}\n${subject}`)
+      })
+    })
+    
+    const series = []
+    
+    // 顏色配置：男生用藍色系，女生用紅色系
+    const maleColor = '#4A90E2'
+    const femaleColor = '#E24A6B'
+    
+    // 準備男女生數據
+    const maleData = []
+    const femaleData = []
+    
+    years.forEach(year => {
+      data.subjects.forEach(subject => {
+        const subjectYearlyData = data.subject_details[subject] || []
+        const yearData = subjectYearlyData.find(item => item.year === year)
+        
+        if (yearData) {
+          maleData.push(yearData.male_avg !== null ? yearData.male_avg : null)
+          femaleData.push(yearData.female_avg !== null ? yearData.female_avg : null)
+        } else {
+          maleData.push(null)
+          femaleData.push(null)
+        }
+      })
+    })
+      
+    // 創建男女生的series
+    series.push({
+      name: '男生平均成績',
+      type: 'bar',
+      data: maleData,
+      barGap: '10%',
+      barCategoryGap: '20%',
+      itemStyle: {
+        color: maleColor,
+        borderRadius: [2, 2, 0, 0]
+      },
+      emphasis: {
+        itemStyle: {
+          shadowBlur: 10,
+          shadowColor: 'rgba(0, 0, 0, 0.2)'
+        }
+      },
+      label: {
+        show: true,
+        position: 'top',
+        formatter: function(params) {
+          return params.value !== null ? params.value.toFixed(1) : ''
+        },
+        fontSize: 10
+      }
+    })
+    
+    series.push({
+      name: '女生平均成績',
+      type: 'bar',
+      data: femaleData,
+      barGap: '10%',
+      barCategoryGap: '20%',
+      itemStyle: {
+        color: femaleColor,
+        borderRadius: [2, 2, 0, 0]
+      },
+      emphasis: {
+        itemStyle: {
+          shadowBlur: 10,
+          shadowColor: 'rgba(0, 0, 0, 0.2)'
+        }
+      },
+      label: {
+        show: true,
+        position: 'top',
+        formatter: function(params) {
+          return params.value !== null ? params.value.toFixed(1) : ''
+        },
+        fontSize: 10
+      }
+    })
+    
+    const option = {
+      title: {
+        text: '性別科目成績差異分析',
+        left: 'center',
+        textStyle: {
+          fontSize: 18,
+          fontWeight: 'bold'
+        }
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'shadow'
+        },
+        formatter: (params) => {
+          const categoryParts = params[0].axisValue.split('\n')
+          const year = categoryParts[0]
+          const subject = categoryParts[1] || ''
+          let result = `<strong>${year}年 - ${subject}</strong><br/>`
+          params.forEach(param => {
+            if (param.value !== null) {
+              result += `${param.seriesName}: <strong>${param.value.toFixed(1)}分</strong><br/>`
+            }
+          })
+          return result
+        }
+      },
+      legend: {
+        data: series.map(s => s.name),
+        top: '10%',
+        type: 'scroll',
+        orient: 'horizontal'
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '10%',
+        top: '25%',
+        containLabel: true
+      },
+      toolbox: {
+        feature: {
+          saveAsImage: { title: '保存圖片' },
+          restore: { title: '還原' },
+          dataZoom: { title: { zoom: '區域縮放', back: '縮放還原' } }
+        },
+        top: '5%',
+        right: '2%'
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: categories,
+        axisLabel: {
+          fontSize: 12
+        },
+        name: '年度',
+        nameLocation: 'middle',
+        nameGap: 25
+      },
+      yAxis: {
+        type: 'value',
+        name: '平均成績',
+        nameLocation: 'middle',
+        nameGap: 40,
+        axisLabel: {
+          formatter: '{value}分',
+          fontSize: 12
+        },
+        splitLine: {
+          lineStyle: {
+            type: 'dashed',
+            opacity: 0.5
+          }
+        }
+      },
+      series: series,
+      animationDuration: 1500,
+      animationEasing: 'cubicOut'
+    }
+    
+    // 更新xAxis配置以支援分區顯示
+    option.xAxis.boundaryGap = true
+    option.xAxis.axisLabel = {
+      fontSize: 10,
+      rotate: 45,
+      interval: 0,
+      formatter: function(value) {
+        return value.replace('\\n', '\n')
+      }
+    }
+    option.xAxis.axisTick = {
+      alignWithLabel: true
+    }
+    option.xAxis.name = '年度 × 科目'
+    option.xAxis.nameGap = 70
+    
+    // 更新grid配置
+    option.grid.left = '8%'
+    option.grid.bottom = '20%'
+    
+    genderSubjectChartInstance.setOption(option)
+  } catch (error) {
+    console.error('渲染性別科目成績分析圖表時出錯:', error)
+  }
+}
+
 // 格式化區域表格數據
 const formatRegionTableData = (region) => {
   if (!geoStats.value || !geoStats.value.detailed || !geoStats.value.detailed[region]) return []
@@ -3418,6 +3965,16 @@ const getRowClassName = ({ row, rowIndex }) => {
   }
   return ''
 }
+
+// 監聽年度欄位變化以重新載入可用年份
+watch(genderSubjectYearCol, (newValue) => {
+  if (newValue) {
+    loadAvailableYears()
+  } else {
+    availableYears.value = []
+    selectedYears.value = []
+  }
+})
 
 // 初始化
 onMounted(() => {
