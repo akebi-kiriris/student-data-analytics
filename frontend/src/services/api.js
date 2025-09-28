@@ -190,5 +190,8 @@ export const API_ENDPOINTS = {
   TOP_SCHOOLS_STATS: '/top_schools_stats',
   
   // 大一各科平均成績
-  SUBJECT_AVERAGE_STATS: '/subject_average_stats'
+  SUBJECT_AVERAGE_STATS: '/subject_average_stats',
+  
+  // 性別科目成績分析
+  GENDER_SUBJECT_STATS: '/analysis/gender-subject'
 }
