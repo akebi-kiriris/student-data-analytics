@@ -2426,5 +2426,210 @@ def gender_subject_analysis():
             session.close()
 
 
+@app.route('/api/analysis/admission-subject', methods=['POST'])
+@jwt_required()
+def admission_subject_analysis():
+    """
+    入學管道科目成績分析 API
+    支援多科目選擇，分析不同入學管道學生在各科目間的成績差異
+    """
+    try:
+        data = request.get_json()
+        table_name = data.get('table_name')
+        year_col = data.get('year_col')
+        admission_col = data.get('admission_col')
+        subject_cols = data.get('subjects', [])
+        years_filter = data.get('years', [])
+        enable_grouping = data.get('enable_grouping', False)
+        admission_groups = data.get('admission_groups', [])
+        
+        print(f"[admission_subject_analysis] 開始分析，表格: {table_name}")
+        print(f"[admission_subject_analysis] 年度欄位: {year_col}, 入學管道欄位: {admission_col}")
+        print(f"[admission_subject_analysis] 科目欄位: {subject_cols}")
+        print(f"[admission_subject_analysis] 年份篩選: {years_filter}")
+        print(f"[admission_subject_analysis] 啟用分組: {enable_grouping}")
+        print(f"[admission_subject_analysis] 入學管道分組: {admission_groups}")
+        
+        if not all([table_name, year_col, admission_col, subject_cols]):
+            return jsonify({'error': '缺少必要參數'}), 400
+        
+        if not isinstance(subject_cols, list) or len(subject_cols) == 0:
+            return jsonify({'error': '請至少選擇一個科目'}), 400
+        
+        # 建立資料庫連接
+        engine = create_engine('sqlite:///database/excel_data.db')
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        
+        # 檢查表格是否存在
+        inspector = inspect(engine)
+        if table_name not in inspector.get_table_names():
+            return jsonify({'error': f'表格 {table_name} 不存在'}), 404
+        
+        # 獲取表格欄位資訊
+        columns_info = inspector.get_columns(table_name)
+        available_columns = [col['name'] for col in columns_info]
+        
+        print(f"[admission_subject_analysis] 可用欄位: {available_columns}")
+        
+        # 安全化欄位名稱
+        safe_year_col = year_col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
+        safe_admission_col = admission_col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
+        safe_subject_cols = []
+        
+        for col in subject_cols:
+            safe_col = col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
+            if safe_col in available_columns:
+                safe_subject_cols.append({'original': col, 'safe': safe_col})
+            else:
+                print(f"[admission_subject_analysis] 警告：科目欄位 '{col}' 不存在")
+        
+        if not safe_subject_cols:
+            return jsonify({'error': '沒有找到有效的科目欄位'}), 400
+        
+        # 檢查必要欄位是否存在
+        if safe_year_col not in available_columns:
+            return jsonify({'error': f'年度欄位 {year_col} 不存在'}), 400
+        if safe_admission_col not in available_columns:
+            return jsonify({'error': f'入學管道欄位 {admission_col} 不存在'}), 400
+        
+        # 建構 SQL 查詢 - 包含年度、入學管道和所有科目欄位
+        select_cols = [f'"{safe_year_col}"', f'"{safe_admission_col}"']
+        select_cols.extend([f'"{subject["safe"]}"' for subject in safe_subject_cols])
+        
+        # 建構 WHERE 條件
+        where_conditions = [
+            f'"{safe_year_col}" IS NOT NULL',
+            f'"{safe_year_col}" != ""',
+            f'"{safe_admission_col}" IS NOT NULL',
+            f'"{safe_admission_col}" != ""'
+        ]
+        
+        # 如果有年份篩選，添加年份條件
+        if years_filter and len(years_filter) > 0:
+            years_str = ', '.join([str(year) for year in years_filter])
+            where_conditions.append(f'"{safe_year_col}" IN ({years_str})')
+        
+        query = text(f'''
+            SELECT {", ".join(select_cols)}
+            FROM "{table_name}" 
+            WHERE {" AND ".join(where_conditions)}
+        ''')
+        
+        print(f"[admission_subject_analysis] 執行查詢: {query}")
+        result = session.execute(query)
+        
+        # 讀取資料並轉換為 DataFrame
+        df = pd.DataFrame(result.fetchall(), columns=[safe_year_col, safe_admission_col] + [subject["safe"] for subject in safe_subject_cols])
+        
+        if df.empty:
+            return jsonify({'error': '查詢結果為空，請檢查篩選條件'}), 404
+        
+        print(f"[admission_subject_analysis] 讀取到 {len(df)} 筆資料")
+        
+        # 使用入學管道分類函數對資料進行分類
+        df['classified_admission'] = df[safe_admission_col].apply(classify_admission_method)
+        
+        # 獲取所有可用的年份
+        all_years = sorted(df[safe_year_col].unique().tolist())
+        
+        # 獲取所有入學管道類別
+        all_admission_methods = sorted(df['classified_admission'].unique().tolist())
+        
+        # 處理入學管道過濾 - 如果啟用了分組，只包含分組中指定的入學管道
+        final_admission_methods = all_admission_methods
+        if enable_grouping and admission_groups:
+            grouped_methods = set()
+            for group in admission_groups:
+                group_methods = group.get('methods', [])
+                if group_methods:
+                    grouped_methods.update(group_methods)
+            # 只保留在分組中指定的入學管道
+            final_admission_methods = [method for method in all_admission_methods if method in grouped_methods]
+        
+        print(f"[admission_subject_analysis] 最終入學管道: {final_admission_methods}")
+        
+        # 處理科目（這裡不需要分組，直接使用選中的科目）
+        final_subjects = []
+        for subject in safe_subject_cols:
+            final_subjects.append({
+                'name': subject['original'],
+                'type': 'single',
+                'subjects': [subject['original']]
+            })
+        
+        # 準備分析結果
+        analysis_results = {
+            'years': all_years,
+            'admission_methods': final_admission_methods,  # 使用過濾後的入學管道
+            'subjects': [subject['name'] for subject in final_subjects],
+            'method_details': {}
+        }
+        
+        # 對每個最終入學管道進行分析
+        for method in final_admission_methods:
+            method_data = df[df['classified_admission'] == method].copy()
+            yearly_data = []
+            
+            for year in all_years:
+                year_data = method_data[method_data[safe_year_col] == year]
+                
+                if not year_data.empty:
+                    year_result = {'year': year, 'subjects': {}}
+                    
+                    for subject_info in final_subjects:
+                        subject_name = subject_info['name']
+                        subject_type = subject_info['type']
+                        subject_cols_list = subject_info['subjects']
+                        
+                        if subject_type == 'group':
+                            # 科目分組：計算多個科目的平均分
+                            valid_scores = []
+                            for subject_col in subject_cols_list:
+                                # 找到對應的安全欄位名稱
+                                safe_col = None
+                                for safe_subject in safe_subject_cols:
+                                    if safe_subject['original'] == subject_col:
+                                        safe_col = safe_subject['safe']
+                                        break
+                                
+                                if safe_col and safe_col in year_data.columns:
+                                    scores = pd.to_numeric(year_data[safe_col], errors='coerce').dropna()
+                                    valid_scores.extend(scores.tolist())
+                            
+                            if valid_scores:
+                                group_avg = round(sum(valid_scores) / len(valid_scores), 2)
+                                year_result['subjects'][subject_name] = group_avg
+                        else:
+                            # 單一科目：直接計算該科目的平均分
+                            subject_col = subject_cols_list[0]
+                            safe_col = None
+                            for safe_subject in safe_subject_cols:
+                                if safe_subject['original'] == subject_col:
+                                    safe_col = safe_subject['safe']
+                                    break
+                            
+                            if safe_col and safe_col in year_data.columns:
+                                scores = pd.to_numeric(year_data[safe_col], errors='coerce').dropna()
+                                if len(scores) > 0:
+                                    subject_avg = round(scores.mean(), 2)
+                                    year_result['subjects'][subject_name] = subject_avg
+                    
+                    yearly_data.append(year_result)
+            
+            analysis_results['method_details'][method] = yearly_data
+        
+        print(f"[admission_subject_analysis] 分析完成，涵蓋 {len(final_subjects)} 科目，{len(all_admission_methods)} 個入學管道")
+        return jsonify(analysis_results)
+        
+    except Exception as e:
+        print(f"[admission_subject_analysis] Error: {str(e)}")
+        return jsonify({'error': f'分析過程發生錯誤: {str(e)}'}), 500
+    
+    finally:
+        if 'session' in locals():
+            session.close()
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

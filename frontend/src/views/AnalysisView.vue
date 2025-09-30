@@ -197,6 +197,19 @@
           </div>
           <p>比較男女生在各科目的平均成績差異，支援多科目同時分析</p>
         </div>
+
+        <!-- 入學管道科目成績分析 -->
+        <div 
+          class="analysis-block" 
+          :class="{ active: activeBlock === 'admission-subject' }"
+          @click="setActiveBlock('admission-subject')"
+        >
+          <div class="block-header">
+            <span class="nav-icon">🎓</span>
+            <h3>入學管道科目成績分析</h3>
+          </div>
+          <p>分析不同入學管道學生在各科目的平均成績表現，支援入學管道分組</p>
+        </div>
       </div>
 
       <!-- 分析內容區塊 -->
@@ -686,6 +699,216 @@
               </el-table-column>
             </el-table-column>
           </el-table>
+        </div>
+      </div>
+
+      <!-- 入學管道科目成績分析區塊 -->
+      <div v-if="activeBlock === 'admission-subject'" class="analysis-content">
+        <el-divider>入學管道科目成績分析</el-divider>
+        
+        <div class="form-group">
+          <label>年度欄位：</label>
+          <el-select v-model="admissionSubjectYearCol" placeholder="自動選擇年度欄位" style="width: 300px" :disabled="columns.length === 0">
+            <el-option
+              v-for="col in columns"
+              :key="col"
+              :label="col"
+              :value="col"
+            />
+          </el-select>
+        </div>
+
+        <div class="form-group">
+          <label>入學管道欄位：</label>
+          <el-select v-model="admissionSubjectMethodCol" placeholder="自動選擇入學管道欄位" style="width: 300px" :disabled="columns.length === 0">
+            <el-option
+              v-for="col in columns"
+              :key="col"
+              :label="col"
+              :value="col"
+            />
+          </el-select>
+        </div>
+
+        <div class="form-group">
+          <label>科目欄位（可多選）：</label>
+          <el-select 
+            v-model="admissionSelectedSubjects" 
+            multiple 
+            placeholder="選擇要分析的科目" 
+            style="width: 100%; max-width: 600px" 
+            :disabled="columns.length === 0"
+          >
+            <el-option
+              v-for="col in numericColumns"
+              :key="col"
+              :label="col"
+              :value="col"
+            />
+          </el-select>
+        </div>
+
+        <!-- 入學管道分組設置 -->
+        <div class="form-group">
+          <label>入學管道分組設置：</label>
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+            <el-switch 
+              v-model="enableAdmissionGrouping" 
+              active-text="啟用入學管道分組"
+              inactive-text="個別分析入學管道"
+            />
+            <el-tooltip content="啟用後可將多個入學管道合併分析，例如將「申請入學」和「繁星推薦」合併為「一般入學管道」進行比較" placement="top">
+              <el-icon><InfoFilled /></el-icon>
+            </el-tooltip>
+          </div>
+          
+          <div v-if="enableAdmissionGrouping" class="subject-groups">
+            <div v-for="(group, index) in admissionGroups" :key="index" class="group-item">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                <el-input 
+                  v-model="group.name" 
+                  placeholder="分組名稱（如：一般入學管道）" 
+                  style="width: 200px"
+                />
+                <el-select 
+                  v-model="group.methods" 
+                  multiple 
+                  placeholder="選擇分組入學管道" 
+                  style="width: 400px"
+                >
+                  <el-option value="申請入學" label="申請入學" />
+                  <el-option value="繁星推薦" label="繁星推薦" />
+                  <el-option value="自然組" label="自然組" />
+                  <el-option value="社會組" label="社會組" />
+                  <el-option value="僑生" label="僑生" />
+                  <el-option value="願景" label="願景" />
+                  <el-option value="其他" label="其他" />
+                </el-select>
+                <el-button 
+                  type="danger" 
+                  :icon="Delete" 
+                  size="small" 
+                  @click="removeAdmissionGroup(index)"
+                  v-if="admissionGroups.length > 1"
+                >
+                  刪除
+                </el-button>
+              </div>
+            </div>
+            <el-button 
+              type="primary" 
+              :icon="Plus" 
+              size="small" 
+              @click="addAdmissionGroup"
+              style="margin-top: 5px;"
+            >
+              添加分組
+            </el-button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>年份篩選：</label>
+          <el-select 
+            v-model="admissionSelectedYears" 
+            multiple 
+            placeholder="選擇年份（留空表示所有年份）" 
+            style="width: 100%; max-width: 600px"
+            clearable
+          >
+            <el-option
+              v-for="year in availableYears"
+              :key="year"
+              :label="year"
+              :value="year"
+            />
+          </el-select>
+        </div>
+
+        <div class="button-group">
+          <el-button 
+            type="success" 
+            @click="getAdmissionSubjectStats"
+            :disabled="!admissionSubjectYearCol || !admissionSubjectMethodCol || !admissionSelectedSubjects || admissionSelectedSubjects.length === 0"
+          >
+            分析入學管道科目成績差異
+          </el-button>
+        </div>
+        
+        <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
+          <strong>說明：</strong>選擇年度欄位、入學管道欄位和一個或多個科目，系統將分析各年度不同入學管道學生在選定科目的平均成績差異。可啟用「入學管道分組」功能將相關入學管道合併分析。
+        </div>
+        
+        <!-- 入學管道科目成績分析結果 -->
+        <div v-if="admissionSubjectStats" class="results-panel">
+          <div class="statistics-summary">
+            <div class="stat-card">
+              <h4>📊 分析概況</h4>
+              <p><strong>分組模式：</strong>{{ admissionSubjectStats.enable_grouping ? '入學管道分組' : '個別入學管道' }}</p>
+              <p><strong>分析科目：</strong>{{ admissionSubjectStats.subjects ? admissionSubjectStats.subjects.join('、') : '-' }}</p>
+              <p><strong>年度範圍：</strong>{{ admissionSubjectStats.years ? admissionSubjectStats.years[0] + ' - ' + admissionSubjectStats.years[admissionSubjectStats.years.length-1] : '-' }}</p>
+              <p><strong>入學管道欄位：</strong>{{ admissionSubjectMethodCol }}</p>
+            </div>
+          </div>
+          
+          <div class="chart-with-export">
+            <div id="admissionSubjectChart" style="width: 100%; height: 600px;"></div>
+            <el-button 
+              type="primary" 
+              class="export-btn"
+              @click="showEChartsExportDialog('admissionSubjectChart', '入學管道科目成績差異分析', admissionSubjectStats)"
+              icon="Download"
+            >
+              📊 導出圖表
+            </el-button>
+          </div>
+          
+          <!-- 詳細數據表格 -->
+          <div class="table-container">
+            <h4>📋 詳細數據表格</h4>
+            <el-table 
+              v-if="admissionSubjectStats && admissionSubjectStats.admission_methods"
+              :data="admissionSubjectTableData" 
+              stripe 
+              border 
+              style="width: 100%"
+              max-height="500"
+            >
+              <!-- 年度 -->
+              <el-table-column prop="year" label="年度" width="80" align="center" fixed="left">
+                <template #default="scope">
+                  <strong>{{ scope.row.year }}</strong>
+                </template>
+              </el-table-column>
+              
+              <!-- 科目 -->
+              <el-table-column prop="subject" label="科目" width="120" align="center" fixed="left">
+                <template #default="scope">
+                  <strong>{{ scope.row.subject }}</strong>
+                </template>
+              </el-table-column>
+              
+              <!-- 各入學管道的成績 -->
+              <el-table-column 
+                v-for="method in admissionSubjectStats.admission_methods" 
+                :key="method" 
+                :label="method"
+                width="100"
+                align="center"
+              >
+                <template #default="scope">
+                  <span v-if="scope.row[method] !== null" :style="{
+                    color: parseFloat(scope.row[method]) >= 80 ? '#67c23a' : 
+                           parseFloat(scope.row[method]) >= 70 ? '#e6a23c' : 
+                           parseFloat(scope.row[method]) >= 60 ? '#f56c6c' : '#909399'
+                  }">
+                    {{ scope.row[method] }}
+                  </span>
+                  <span v-else style="color: #ccc;">-</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
         </div>
       </div>
 
@@ -1542,6 +1765,17 @@ const subjectGroups = ref([
 
 // 分析模式
 const genderAnalysisMode = ref('yearly')
+
+// 入學管道科目分析相關變數
+const admissionSubjectYearCol = ref('')
+const admissionSubjectMethodCol = ref('')
+const admissionSelectedSubjects = ref([])
+const admissionSelectedYears = ref([])
+const enableAdmissionGrouping = ref(false)
+const admissionGroups = ref([
+  { name: '', methods: [] }
+])
+const admissionSubjectStats = ref(null)
 const genderSubjectStats = ref(null)
 const activeBlock = ref('')
 const currentStats = ref(null)
@@ -1566,6 +1800,7 @@ let geoDetailedChartInstances = {}
 let topSchoolsChartInstance = null
 let subjectAverageChartInstance = null
 let genderSubjectChartInstance = null
+let admissionSubjectChartInstance = null
 
 // 計算屬性
 const numericColumns = computed(() => {
@@ -1616,6 +1851,37 @@ const genderSubjectTableData = computed(() => {
   })
 })
 
+// 入學管道科目表格數據
+const admissionSubjectTableData = computed(() => {
+  if (!admissionSubjectStats.value || !admissionSubjectStats.value.method_details) return []
+  
+  const tableData = []
+  const { years = [], subjects = [], admission_methods = [], method_details = {} } = admissionSubjectStats.value
+  
+  // 為每年每科目創建一行
+  years.forEach(year => {
+    subjects.forEach(subject => {
+      const rowData = { year, subject }
+      
+      // 為每個入學管道添加成績數據
+      admission_methods.forEach(method => {
+        const methodData = method_details[method] || []
+        const yearData = methodData.find(item => item.year === year)
+        
+        if (yearData && yearData.subjects && yearData.subjects[subject] !== undefined) {
+          rowData[method] = yearData.subjects[subject].toFixed(1)
+        } else {
+          rowData[method] = null
+        }
+      })
+      
+      tableData.push(rowData)
+    })
+  })
+  
+  return tableData
+})
+
 // 清理函數
 const cleanupFunctions = []
 
@@ -1633,6 +1899,7 @@ const setActiveBlock = (blockName) => {
   topSchoolsStats.value = null
   subjectAverageStats.value = null
   genderSubjectStats.value = null
+  admissionSubjectStats.value = null
   rawData.value = []
   
   // 清理圖表
@@ -1669,6 +1936,14 @@ const setActiveBlock = (blockName) => {
   if (topSchoolsChartInstance) {
     topSchoolsChartInstance.dispose()
     topSchoolsChartInstance = null
+  }
+  if (genderSubjectChartInstance) {
+    genderSubjectChartInstance.dispose()
+    genderSubjectChartInstance = null
+  }
+  if (admissionSubjectChartInstance) {
+    admissionSubjectChartInstance.dispose()
+    admissionSubjectChartInstance = null
   }
 }
 
@@ -1732,6 +2007,9 @@ const loadTableColumns = async () => {
     genderCol.value = ''
     genderSubjectYearCol.value = ''
     genderSubjectGenderCol.value = ''
+    admissionSubjectYearCol.value = ''
+    admissionSubjectMethodCol.value = ''
+    admissionSelectedSubjects.value = []
     
     // 自動選擇合適的欄位
     autoSelectColumns()
@@ -1828,6 +2106,8 @@ const autoSelectColumns = () => {
     geoYearCol.value = yearColumns[0]
     // 設置性別科目分析的年度欄位
     genderSubjectYearCol.value = yearColumns[0]
+    // 設置入學管道科目分析的年度欄位
+    admissionSubjectYearCol.value = yearColumns[0]
   }
   
   // 自動選擇學校欄位（按優先級排序）
@@ -1879,7 +2159,8 @@ const autoSelectColumns = () => {
   })
   if (admissionColumns.length > 0) {
     admissionMethodCol.value = admissionColumns[0]
-
+    // 同時設置入學管道科目分析的入學管道欄位
+    admissionSubjectMethodCol.value = admissionColumns[0]
   }
   
   // 自動選擇性別欄位
@@ -1933,7 +2214,8 @@ const autoSelectColumns = () => {
   if (subjectColumns.length > 0) {
     // 預設選擇前3個科目
     selectedSubjects.value = subjectColumns.slice(0, 3)
-
+    // 同時設置入學管道科目分析的科目欄位
+    admissionSelectedSubjects.value = subjectColumns.slice(0, 3)
   }
   
   // 自動選擇第一個數值型欄位作為統計欄位
@@ -2194,6 +2476,17 @@ const addSubjectGroup = () => {
 const removeSubjectGroup = (index) => {
   if (subjectGroups.value.length > 1) {
     subjectGroups.value.splice(index, 1)
+  }
+}
+
+// 入學管道分組管理函數
+const addAdmissionGroup = () => {
+  admissionGroups.value.push({ name: '', methods: [] })
+}
+
+const removeAdmissionGroup = (index) => {
+  if (admissionGroups.value.length > 1) {
+    admissionGroups.value.splice(index, 1)
   }
 }
 
@@ -4167,6 +4460,261 @@ const renderGenderSubjectChart = () => {
     genderSubjectChartInstance.setOption(option)
   } catch (error) {
     console.error('渲染性別科目成績分析圖表時出錯:', error)
+  }
+}
+
+// 入學管道科目成績分析
+const getAdmissionSubjectStats = async () => {
+  try {
+    console.log('入學管道科目成績分析請求')
+    console.log('admissionSelectedSubjects.value:', admissionSelectedSubjects.value)
+    console.log('admissionSubjectYearCol.value:', admissionSubjectYearCol.value)
+    console.log('admissionSubjectMethodCol.value:', admissionSubjectMethodCol.value)
+    
+    if (!admissionSubjectYearCol.value || !admissionSubjectMethodCol.value || !admissionSelectedSubjects.value || admissionSelectedSubjects.value.length === 0) {
+      ElMessage.error('請選擇年度欄位、入學管道欄位和科目')
+      return
+    }
+    
+    // 驗證入學管道分組設置
+    if (enableAdmissionGrouping.value) {
+      const validGroups = admissionGroups.value.filter(group => 
+        group.name.trim() !== '' && group.methods.length > 0
+      )
+      if (validGroups.length === 0) {
+        ElMessage.error('啟用入學管道分組時，請至少設置一個有效的分組（包含名稱和入學管道）')
+        return
+      }
+    }
+    
+    const requestData = {
+      table_name: selectedTable.value,
+      year_col: admissionSubjectYearCol.value,
+      admission_col: admissionSubjectMethodCol.value,
+      subjects: admissionSelectedSubjects.value,
+      years: admissionSelectedYears.value && admissionSelectedYears.value.length > 0 ? admissionSelectedYears.value : null,
+      enable_grouping: enableAdmissionGrouping.value,
+      admission_groups: enableAdmissionGrouping.value ? 
+        admissionGroups.value.filter(group => group.name.trim() !== '' && group.methods.length > 0) : null
+    }
+    
+    console.log('入學管道科目成績分析請求參數:', requestData)
+    
+    const data = await apiService.post(API_ENDPOINTS.ADMISSION_SUBJECT_STATS, requestData)
+    
+    console.log('入學管道科目成績分析結果:', data)
+    console.log('返回的入學管道:', data.admission_methods)
+    console.log('返回的科目:', data.subjects)
+    console.log('返回的年份:', data.years)
+    console.log('方法詳情:', data.method_details)
+    
+    admissionSubjectStats.value = data
+    currentStats.value = data
+    
+    // 等待 DOM 更新
+    await nextTick()
+    
+    // 初始化圖表
+    const chartDom = document.getElementById('admissionSubjectChart')
+    if (chartDom) {
+      if (admissionSubjectChartInstance) {
+        admissionSubjectChartInstance.dispose()
+        admissionSubjectChartInstance = null
+      }
+      admissionSubjectChartInstance = echarts.init(chartDom)
+    }
+    
+    renderAdmissionSubjectChart()
+  } catch (error) {
+    ElMessage.error('入學管道科目成績分析失敗')
+    console.error(error)
+  }
+}
+
+// 入學管道科目成績分析圖表
+const renderAdmissionSubjectChart = () => {
+  if (!admissionSubjectChartInstance || !admissionSubjectStats.value) return
+  
+  try {
+    const data = admissionSubjectStats.value
+    console.log('圖表渲染數據:', data)
+    
+    // 準備圖表數據 - 創建年度+科目的組合分類
+    const categories = []
+    const series = []
+    
+    if (data.subjects && data.years && data.admission_methods) {
+      // 創建年度+科目的分類標籤
+      data.years.forEach(year => {
+        data.subjects.forEach(subject => {
+          categories.push(`${year}\n${subject}`)
+        })
+      })
+      
+      // 決定要顯示的入學管道 - 根據是否啟用分組來篩選
+      let displayMethods = []
+      
+      if (enableAdmissionGrouping.value && admissionGroups.value.length > 0) {
+        // 如果啟用了分組，只顯示分組中包含的入學管道
+        const groupedMethods = new Set()
+        admissionGroups.value.forEach(group => {
+          if (group.name.trim() !== '' && group.methods.length > 0) {
+            group.methods.forEach(method => {
+              groupedMethods.add(method)
+            })
+          }
+        })
+        displayMethods = data.admission_methods.filter(method => groupedMethods.has(method))
+      } else {
+        // 如果沒有啟用分組，顯示所有入學管道
+        displayMethods = data.admission_methods
+      }
+      
+      console.log('要顯示的入學管道:', displayMethods)
+      console.log('categories:', categories)
+      
+      // 為每個要顯示的入學管道創建一個系列
+      const colors = ['#4A90E2', '#E24A6B', '#67C23A', '#E6A23C', '#9013FE', '#FF5722', '#009688', '#795548']
+      
+      displayMethods.forEach((method, index) => {
+        const methodData = []
+        
+        data.years.forEach(year => {
+          data.subjects.forEach(subject => {
+            const subjectYearlyData = data.method_details[method] || []
+            const yearData = subjectYearlyData.find(item => item.year === year)
+            
+            if (yearData && yearData.subjects && yearData.subjects[subject] !== undefined) {
+              methodData.push(yearData.subjects[subject])
+            } else {
+              methodData.push(null)
+            }
+          })
+        })
+        
+        // 檢查是否有有效數據
+        const hasValidData = methodData.some(value => value !== null && value !== undefined)
+        console.log(`入學管道 ${method} 的數據:`, methodData, '有效數據:', hasValidData)
+        
+        if (hasValidData) {
+          const seriesConfig = {
+            name: method,
+            type: 'bar',
+            data: methodData,
+            itemStyle: {
+              color: colors[index % colors.length],
+              borderRadius: [2, 2, 0, 0]
+            },
+            emphasis: {
+              itemStyle: {
+                shadowBlur: 10,
+                shadowColor: 'rgba(0, 0, 0, 0.2)'
+              }
+            },
+            label: {
+              show: false
+            }
+          }
+          
+
+          
+          series.push(seriesConfig)
+        }
+      })
+    }
+    
+    const option = {
+      title: {
+        text: '入學管道科目成績差異分析',
+        left: 'center',
+        textStyle: {
+          fontSize: 18,
+          fontWeight: 'bold'
+        }
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'shadow'
+        },
+        formatter: (params) => {
+          const categoryParts = params[0].axisValue.split('\n')
+          const year = categoryParts[0]
+          const subject = categoryParts[1] || ''
+          let result = `<strong>${year}年 - ${subject}</strong><br/>`
+          params.forEach(param => {
+            if (param.value !== null) {
+              result += `${param.seriesName}: <strong>${param.value.toFixed(1)}分</strong><br/>`
+            }
+          })
+          return result
+        }
+      },
+      legend: {
+        data: series.map(s => s.name),
+        top: '10%',
+        type: 'scroll',
+        orient: 'horizontal'
+      },
+      grid: {
+        left: '8%',
+        right: '8%',
+        bottom: '30%',
+        top: '35%',
+        containLabel: true
+      },
+      toolbox: {
+        feature: {
+          saveAsImage: { title: '保存圖片' },
+          restore: { title: '還原' },
+          dataZoom: { title: { zoom: '區域縮放', back: '縮放還原' } }
+        },
+        top: '5%',
+        right: '2%'
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: true,
+        data: categories,
+        axisLabel: {
+          fontSize: 9,
+          rotate: 30,
+          interval: 0,
+          overflow: 'break'
+        },
+        name: '年度-科目',
+        nameLocation: 'middle',
+        nameGap: 50
+      },
+      yAxis: {
+        type: 'value',
+        name: '平均成績',
+        nameLocation: 'middle',
+        nameGap: 40,
+        min: 0,
+        max: 100,
+        axisLabel: {
+          formatter: '{value}分',
+          fontSize: 12
+        },
+        splitLine: {
+          lineStyle: {
+            type: 'dashed',
+            opacity: 0.3
+          }
+        }
+      },
+      series: series,
+      animationDuration: 1500,
+      animationEasing: 'cubicOut'
+    }
+    
+    console.log('最終圖表配置:', option)
+    console.log('最終系列數據:', series)
+    
+    admissionSubjectChartInstance.setOption(option)
+  } catch (error) {
+    console.error('渲染入學管道科目成績分析圖表時出錯:', error)
   }
 }
 
