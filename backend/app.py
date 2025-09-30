@@ -2168,11 +2168,17 @@ def gender_subject_analysis():
         gender_col = data.get('gender_col')
         subject_cols = data.get('subjects', [])
         years_filter = data.get('years', [])
+        enable_grouping = data.get('enable_grouping', False)
+        subject_groups = data.get('subject_groups', [])
+        analysis_mode = data.get('analysis_mode', 'yearly')  # 'yearly' 或 'overall'
         
         print(f"[gender_subject_analysis] 開始分析，表格: {table_name}")
         print(f"[gender_subject_analysis] 年度欄位: {year_col}, 性別欄位: {gender_col}")
         print(f"[gender_subject_analysis] 科目欄位: {subject_cols}")
         print(f"[gender_subject_analysis] 年份篩選: {years_filter}")
+        print(f"[gender_subject_analysis] 啟用分組: {enable_grouping}")
+        print(f"[gender_subject_analysis] 科目分組: {subject_groups}")
+        print(f"[gender_subject_analysis] 分析模式: {analysis_mode}")
         
         if not all([table_name, year_col, gender_col, subject_cols]):
             return jsonify({'error': '缺少必要參數'}), 400
@@ -2274,13 +2280,45 @@ def gender_subject_analysis():
         for subject in safe_subject_cols:
             df[subject['safe']] = pd.to_numeric(df[subject['safe']], errors='coerce')
         
+        # 處理科目分組
+        final_subjects = []
+        if enable_grouping and subject_groups:
+            print(f"[gender_subject_analysis] 處理科目分組")
+            # 處理分組科目
+            for group in subject_groups:
+                group_name = group.get('name', '').strip()
+                group_subjects = group.get('subjects', [])
+                
+                if not group_name or not group_subjects:
+                    continue
+                    
+                # 找到分組中的有效科目欄位
+                valid_group_subjects = []
+                for subj in group_subjects:
+                    for safe_subj in safe_subject_cols:
+                        if safe_subj['original'] == subj:
+                            valid_group_subjects.append(safe_subj['safe'])
+                            break
+                
+                if valid_group_subjects:
+                    # 計算分組平均（多科目的平均）
+                    group_col = f"group_{len(final_subjects)}"
+                    df[group_col] = df[valid_group_subjects].mean(axis=1)
+                    final_subjects.append({'original': group_name, 'safe': group_col, 'is_group': True})
+                    print(f"[gender_subject_analysis] 建立分組 '{group_name}'，包含科目: {group_subjects}")
+        else:
+            # 不分組，使用原始科目
+            final_subjects = [{'original': subj['original'], 'safe': subj['safe'], 'is_group': False} for subj in safe_subject_cols]
+        
         # 分析結果結構
         analysis_results = {
-            'subjects': [subject['original'] for subject in safe_subject_cols],
+            'subjects': [subject['original'] for subject in final_subjects],
             'year_range': f"{df[safe_year_col].min()}-{df[safe_year_col].max()}",
             'total_records': len(df),
             'subject_details': {},
-            'overall_summary': {}
+            'overall_summary': {},
+            'enable_grouping': enable_grouping,
+            'analysis_mode': analysis_mode
         }
         
         # 整體男女平均成績
@@ -2288,7 +2326,7 @@ def gender_subject_analysis():
         overall_female_scores = []
         
         # 逐科目分析
-        for subject in safe_subject_cols:
+        for subject in final_subjects:
             subject_name = subject['original']
             subject_col = subject['safe']
             
@@ -2341,7 +2379,42 @@ def gender_subject_analysis():
             overall_diff = analysis_results['overall_summary']['male_avg'] - analysis_results['overall_summary']['female_avg']
             analysis_results['overall_summary']['difference'] = round(overall_diff, 2)
         
-        print(f"[gender_subject_analysis] 分析完成，涵蓋 {len(safe_subject_cols)} 科目")
+        # 如果是整體平均分析模式，添加科目對比數據
+        if analysis_mode == 'overall':
+            subject_comparison = []
+            
+            for subject in final_subjects:
+                subject_name = subject['original']
+                subject_col = subject['safe']
+                
+                # 過濾有效成績
+                subject_df = df[[safe_year_col, safe_gender_col, subject_col]].dropna()
+                
+                if subject_df.empty:
+                    continue
+                
+                # 計算整體男女平均（所有年份合併）
+                male_data = subject_df[subject_df[safe_gender_col] == '男'][subject_col]
+                female_data = subject_df[subject_df[safe_gender_col] == '女'][subject_col]
+                
+                male_avg = male_data.mean() if len(male_data) > 0 else None
+                female_avg = female_data.mean() if len(female_data) > 0 else None
+                
+                if male_avg is not None and female_avg is not None:
+                    difference = round(male_avg - female_avg, 2)
+                    subject_comparison.append({
+                        'subject': subject_name,
+                        'male_avg': round(male_avg, 2),
+                        'female_avg': round(female_avg, 2),
+                        'difference': difference,
+                        'male_count': len(male_data),
+                        'female_count': len(female_data)
+                    })
+            
+            analysis_results['subject_comparison'] = subject_comparison
+            print(f"[gender_subject_analysis] 整體平均分析模式，處理了 {len(subject_comparison)} 個科目對比")
+        
+        print(f"[gender_subject_analysis] 分析完成，涵蓋 {len(final_subjects)} 科目，模式: {analysis_mode}")
         return jsonify(analysis_results)
         
     except Exception as e:
