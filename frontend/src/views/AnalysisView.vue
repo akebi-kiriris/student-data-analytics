@@ -203,6 +203,7 @@
       <!-- 單欄位統計分析區塊 -->
       <div v-if="activeBlock === 'single-column'" class="analysis-content">
         <el-divider>單欄位統計分析</el-divider>
+        
         <div class="form-group">
           <label>選擇欄位：</label>
           <el-select v-model="selectedColumn" placeholder="請選擇欄位" style="width: 300px" :disabled="columns.length === 0">
@@ -214,9 +215,14 @@
             />
           </el-select>
         </div>
+        
         <div class="button-group">
           <el-button type="primary" @click="getColumnStats" :disabled="!selectedColumn">計算統計</el-button>
           <el-button @click="showRawData" :disabled="!selectedColumn">顯示原始資料</el-button>
+        </div>
+        
+        <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
+          <strong>說明：</strong>選擇數值型欄位進行統計分析，系統會自動計算基本統計量並生成數值分布直方圖。非數值資料會自動跳過。
         </div>
       </div>
 
@@ -471,6 +477,77 @@
           </el-select>
         </div>
 
+        <!-- 分析模式選擇 -->
+        <div class="form-group">
+          <label>分析模式：</label>
+          <el-radio-group v-model="genderAnalysisMode" style="margin-bottom: 10px;">
+            <el-radio value="yearly">按年度分析（時間趨勢）</el-radio>
+            <el-radio value="overall">整體平均分析（科目對比）</el-radio>
+          </el-radio-group>
+          <div style="font-size: 12px; color: #666; margin-top: 5px;">
+            <span v-if="genderAnalysisMode === 'yearly'">📈 顯示各科目在不同年度的男女成績變化趨勢</span>
+            <span v-if="genderAnalysisMode === 'overall'">📊 以科目為橫軸，比較男女在各科目的整體平均表現</span>
+          </div>
+        </div>
+
+        <!-- 科目分組設置 -->
+        <div class="form-group">
+          <label>科目分組設置：</label>
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+            <el-switch 
+              v-model="enableSubjectGrouping" 
+              active-text="啟用科目分組"
+              inactive-text="個別分析科目"
+            />
+            <el-tooltip content="啟用後可將多個科目合併計算平均分數，例如將「基礎程式設計」和「程式設計」合併為「程式設計相關」進行分析" placement="top">
+              <el-icon><InfoFilled /></el-icon>
+            </el-tooltip>
+          </div>
+          
+          <div v-if="enableSubjectGrouping" class="subject-groups">
+            <div v-for="(group, index) in subjectGroups" :key="index" class="group-item">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                <el-input 
+                  v-model="group.name" 
+                  placeholder="分組名稱（如：程式設計相關）" 
+                  style="width: 200px"
+                />
+                <el-select 
+                  v-model="group.subjects" 
+                  multiple 
+                  placeholder="選擇分組科目" 
+                  style="width: 400px"
+                >
+                  <el-option
+                    v-for="col in selectedSubjects"
+                    :key="col"
+                    :label="col"
+                    :value="col"
+                  />
+                </el-select>
+                <el-button 
+                  type="danger" 
+                  :icon="Delete" 
+                  size="small" 
+                  @click="removeSubjectGroup(index)"
+                  v-if="subjectGroups.length > 1"
+                >
+                  刪除
+                </el-button>
+              </div>
+            </div>
+            <el-button 
+              type="primary" 
+              :icon="Plus" 
+              size="small" 
+              @click="addSubjectGroup"
+              style="margin-top: 5px;"
+            >
+              添加分組
+            </el-button>
+          </div>
+        </div>
+
         <div class="form-group">
           <label>年份篩選：</label>
           <el-select 
@@ -500,7 +577,7 @@
         </div>
         
         <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
-          <strong>說明：</strong>選擇年度欄位、性別欄位和一個或多個科目，系統將分析各年度男女生在選定科目的平均成績差異，並生成對比圖表和詳細統計表格。
+          <strong>說明：</strong>選擇年度欄位、性別欄位和一個或多個科目，系統將分析各年度男女生在選定科目的平均成績差異。可啟用「科目分組」功能將相關科目合併分析，例如將「基礎程式設計」和「程式設計」合併為「程式設計相關」來比較男女表現。
         </div>
         
         <!-- 性別科目成績分析結果 -->
@@ -508,6 +585,8 @@
           <div class="statistics-summary">
             <div class="stat-card">
               <h4>📊 分析概況</h4>
+              <p><strong>分析類型：</strong>{{ genderSubjectStats.analysis_mode === 'yearly' ? '按年度趨勢分析' : '整體平均對比分析' }}</p>
+              <p><strong>分組模式：</strong>{{ genderSubjectStats.enable_grouping ? '科目分組' : '個別科目' }}</p>
               <p><strong>分析科目：</strong>{{ genderSubjectStats.subjects ? genderSubjectStats.subjects.join('、') : '-' }}</p>
               <p><strong>年度範圍：</strong>{{ genderSubjectStats.years ? genderSubjectStats.years[0] + ' - ' + genderSubjectStats.years[genderSubjectStats.years.length-1] : '-' }}</p>
               <p><strong>性別欄位：</strong>{{ genderSubjectGenderCol }}</p>
@@ -615,15 +694,45 @@
         <div v-if="columnStats" class="stats-card">
           <el-divider>{{ selectedColumn }} 統計資訊</el-divider>
           <div class="stats-summary">
-            <p><strong>欄位名稱：</strong>{{ columnStats.column_name }}</p>
-            <p><strong>總計筆數：</strong>{{ columnStats.count }} 筆</p>
-            <p><strong>平均值：</strong>{{ columnStats.mean?.toFixed(2) || 'N/A' }}</p>
-            <p><strong>標準差：</strong>{{ columnStats.std?.toFixed(2) || 'N/A' }}</p>
-            <p><strong>最小值：</strong>{{ columnStats.min || 'N/A' }}</p>
-            <p><strong>最大值：</strong>{{ columnStats.max || 'N/A' }}</p>
+            <div class="stats-grid">
+              <div class="stats-item">
+                <span class="stats-label">欄位名稱</span>
+                <span class="stats-value">{{ columnStats.column_name }}</span>
+              </div>
+              <div class="stats-item">
+                <span class="stats-label">有效筆數</span>
+                <span class="stats-value">{{ columnStats.count }} 筆</span>
+              </div>
+              <div class="stats-item">
+                <span class="stats-label">跳過筆數</span>
+                <span class="stats-value">{{ columnStats.skipped || 0 }} 筆</span>
+              </div>
+              <div class="stats-item">
+                <span class="stats-label">平均值</span>
+                <span class="stats-value">{{ columnStats.mean?.toFixed(2) || 'N/A' }}</span>
+              </div>
+              <div class="stats-item">
+                <span class="stats-label">標準差</span>
+                <span class="stats-value">{{ columnStats.std?.toFixed(2) || 'N/A' }}</span>
+              </div>
+              <div class="stats-item">
+                <span class="stats-label">最小值</span>
+                <span class="stats-value">{{ columnStats.min?.toFixed(2) || 'N/A' }}</span>
+              </div>
+              <div class="stats-item">
+                <span class="stats-label">最大值</span>
+                <span class="stats-value">{{ columnStats.max?.toFixed(2) || 'N/A' }}</span>
+              </div>
+              <div class="stats-item">
+                <span class="stats-label">範圍</span>
+                <span class="stats-value">{{ (columnStats.max - columnStats.min)?.toFixed(2) || 'N/A' }}</span>
+              </div>
+            </div>
           </div>
           <div class="chart-with-export">
-            <canvas id="statsChart" style="width: 100%; height: 400px;"></canvas>
+            <div class="chart-container" style="position: relative; height: 400px; width: 100%;">
+              <canvas id="statsChart"></canvas>
+            </div>
             <el-button 
               type="primary" 
               class="export-btn"
@@ -643,7 +752,9 @@
             <p v-if="multiSubjectStats.subjects"><strong>分析科目：</strong>{{ multiSubjectStats.subjects.join(', ') }}</p>
           </div>
           <div class="chart-with-export">
-            <canvas id="multiSubjectChart" style="width: 100%; height: 400px;"></canvas>
+            <div class="chart-container" style="position: relative; height: 350px; width: 100%;">
+              <canvas id="multiSubjectChart"></canvas>
+            </div>
             <el-button 
               type="primary" 
               class="export-btn"
@@ -653,6 +764,42 @@
               📊 導出圖表
             </el-button>
           </div>
+          
+          <el-divider>詳細數據</el-divider>
+          <el-table 
+            v-if="multiSubjectStats.years && multiSubjectStats.subjects && multiSubjectStats.data"
+            :data="multiSubjectStats.subjects.map(subject => {
+              const subjectData = { subject }
+              multiSubjectStats.years.forEach((year, index) => {
+                subjectData[String(year)] = multiSubjectStats.data[subject][index]
+              })
+              return subjectData
+            })"
+            border 
+            style="width: 100%"
+          >
+            <el-table-column prop="subject" label="科目" width="200" fixed>
+              <template #default="scope">
+                <strong>{{ scope.row.subject }}</strong>
+              </template>
+            </el-table-column>
+            <el-table-column 
+              v-for="year in multiSubjectStats.years"
+              :key="year"
+              :prop="String(year)" 
+              :label="`${year}年平均`"
+              width="120"
+            >
+              <template #default="scope">
+                <span :style="{
+                  color: scope.row[String(year)] >= 70 ? '#67c23a' : 
+                         scope.row[String(year)] >= 60 ? '#e6a23c' : '#f56c6c'
+                }">
+                  {{ scope.row[String(year)]?.toFixed(2) || 'N/A' }}
+                </span>
+              </template>
+            </el-table-column>
+          </el-table>
         </div>
 
         <div v-if="yearlyAdmissionStats" class="stats-card">
@@ -1324,7 +1471,7 @@
 
 <script setup>
 import { ref, onMounted, nextTick, watch, onBeforeUnmount, computed } from 'vue'
-import { UploadFilled } from '@element-plus/icons-vue'
+import { UploadFilled, Delete, Plus, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { authService } from '../services/auth.js'
@@ -1386,6 +1533,15 @@ const genderSubjectYearCol = ref('')
 const genderSubjectGenderCol = ref('')
 const selectedYears = ref([])
 const availableYears = ref([])
+
+// 科目分組相關
+const enableSubjectGrouping = ref(false)
+const subjectGroups = ref([
+  { name: '', subjects: [] }
+])
+
+// 分析模式
+const genderAnalysisMode = ref('yearly')
 const genderSubjectStats = ref(null)
 const activeBlock = ref('')
 const currentStats = ref(null)
@@ -1802,10 +1958,23 @@ const getColumnStats = async () => {
   }
   
   try {
-    const data = await apiService.post(API_ENDPOINTS.COLUMN_STATS, {
+    const response = await apiService.post(API_ENDPOINTS.COLUMN_STATS, {
       table_name: selectedTable.value,
       column: selectedColumn.value
     })
+    
+    // 轉換後端資料結構以匹配前端期望
+    const data = {
+      column_name: response.column,
+      count: response.stats.count,
+      mean: response.stats.mean,
+      std: response.stats.std,
+      min: response.stats.min,
+      max: response.stats.max,
+      skipped: response.stats.skipped,
+      data: response.raw_data
+    }
+    
     columnStats.value = data
     currentStats.value = data
     await nextTick()
@@ -2017,6 +2186,17 @@ const getSubjectAverageStats = async () => {
   }
 }
 
+// 科目分組管理函數
+const addSubjectGroup = () => {
+  subjectGroups.value.push({ name: '', subjects: [] })
+}
+
+const removeSubjectGroup = (index) => {
+  if (subjectGroups.value.length > 1) {
+    subjectGroups.value.splice(index, 1)
+  }
+}
+
 // 性別科目成績分析
 const getGenderSubjectStats = async () => {
   try {
@@ -2032,12 +2212,27 @@ const getGenderSubjectStats = async () => {
       return
     }
     
+    // 驗證科目分組設置
+    if (enableSubjectGrouping.value) {
+      const validGroups = subjectGroups.value.filter(group => 
+        group.name.trim() !== '' && group.subjects.length > 0
+      )
+      if (validGroups.length === 0) {
+        ElMessage.error('啟用科目分組時，請至少設置一個有效的分組（包含名稱和科目）')
+        return
+      }
+    }
+    
     const requestData = {
       table_name: selectedTable.value,
       year_col: genderSubjectYearCol.value,
       gender_col: genderSubjectGenderCol.value,
       subjects: selectedSubjects.value,
-      years: selectedYears.value && selectedYears.value.length > 0 ? selectedYears.value : null
+      years: selectedYears.value && selectedYears.value.length > 0 ? selectedYears.value : null,
+      enable_grouping: enableSubjectGrouping.value,
+      subject_groups: enableSubjectGrouping.value ? 
+        subjectGroups.value.filter(group => group.name.trim() !== '' && group.subjects.length > 0) : null,
+      analysis_mode: genderAnalysisMode.value
     }
     
     console.log('性別科目成績分析請求參數:', requestData)
@@ -2104,49 +2299,89 @@ const renderColumnChart = (data) => {
       columnChartInstance = null
     }
     
-    // 處理數據
-    const validData = data.data.map((value, index) => ({
-      value: Number(value),
-      index: index + 1
-    })).filter(item => !isNaN(item.value))
+    // 處理數據為數值
+    const validValues = data.data
+      .map(value => Number(value))
+      .filter(value => !isNaN(value) && isFinite(value))
     
-    if (validData.length === 0) return
+    if (validValues.length === 0) return
+    
+    // 創建直方圖數據
+    const min = Math.min(...validValues)
+    const max = Math.max(...validValues)
+    const binCount = Math.min(20, Math.max(5, Math.ceil(Math.sqrt(validValues.length))))
+    const binWidth = (max - min) / binCount
+    
+    // 初始化區間
+    const bins = Array(binCount).fill(0)
+    const binLabels = []
+    
+    for (let i = 0; i < binCount; i++) {
+      const binStart = min + i * binWidth
+      const binEnd = min + (i + 1) * binWidth
+      binLabels.push(`${binStart.toFixed(1)}-${binEnd.toFixed(1)}`)
+    }
+    
+    // 統計每個區間的頻率
+    validValues.forEach(value => {
+      let binIndex = Math.floor((value - min) / binWidth)
+      if (binIndex >= binCount) binIndex = binCount - 1
+      if (binIndex < 0) binIndex = 0
+      bins[binIndex]++
+    })
     
     columnChartInstance = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: validData.map(item => item.index),
+        labels: binLabels,
         datasets: [{
-          label: data.column_name,
-          data: validData.map(item => item.value),
-          backgroundColor: 'rgba(54, 162, 235, 0.5)',
+          label: `${data.column_name} 分布`,
+          data: bins,
+          backgroundColor: 'rgba(54, 162, 235, 0.6)',
           borderColor: 'rgba(54, 162, 235, 1)',
           borderWidth: 1
         }]
       },
       options: {
         responsive: true,
+        maintainAspectRatio: true,
         plugins: {
           title: { 
             display: true, 
-            text: '數值分布圖',
+            text: `${data.column_name} 數值分布直方圖`,
             font: { size: 16 }
           },
-          legend: { position: 'top' }
+          legend: { 
+            position: 'top',
+            display: true
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                const total = validValues.length
+                const count = context.parsed.y
+                const percentage = ((count / total) * 100).toFixed(1)
+                return `頻率: ${count} (${percentage}%)`
+              }
+            }
+          }
         },
         scales: {
           x: {
             title: { 
               display: true, 
-              text: '資料序號' 
+              text: '數值區間' 
             }
           },
           y: {
             title: { 
               display: true, 
-              text: '數值' 
+              text: '頻率' 
             },
-            beginAtZero: true
+            beginAtZero: true,
+            ticks: {
+              stepSize: 1
+            }
           }
         }
       }
@@ -2199,13 +2434,24 @@ const renderMultiSubjectChart = (data) => {
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         plugins: {
           title: { display: true, text: '各學年各科平均分數' },
           legend: { position: 'top' }
         },
         scales: {
-          x: { title: { display: true, text: '學科' } },
-          y: { title: { display: true, text: '平均分數' }, beginAtZero: true }
+          x: { 
+            title: { display: true, text: '學科' },
+            ticks: {
+              maxRotation: 45,
+              minRotation: 0
+            }
+          },
+          y: { 
+            title: { display: true, text: '平均分數' }, 
+            beginAtZero: true,
+            max: 100
+          }
         }
       }
     })
@@ -3605,23 +3851,25 @@ const renderSubjectAverageChart = () => {
       
       series.push({
         name: subject,
-        type: 'line',
+        type: 'bar',
         data: subjectData,
-        symbol: 'circle',
-        symbolSize: 6,
-        lineStyle: {
-          width: 2
-        },
         itemStyle: {
-          color: colors[index % colors.length]
+          color: colors[index % colors.length],
+          borderRadius: [2, 2, 0, 0] // 圓角效果
         },
-        connectNulls: false // 不連接 null 值
+        emphasis: {
+          itemStyle: {
+            shadowBlur: 10,
+            shadowOffsetX: 0,
+            shadowColor: 'rgba(0, 0, 0, 0.5)'
+          }
+        }
       })
     })
     
     const option = {
       title: {
-        text: '大一各科平均成績趨勢',
+        text: '大一各科平均成績比較',
         left: 'center',
         textStyle: {
           fontSize: 18,
@@ -3631,7 +3879,7 @@ const renderSubjectAverageChart = () => {
       tooltip: {
         trigger: 'axis',
         axisPointer: {
-          type: 'cross'
+          type: 'shadow'
         },
         formatter: (params) => {
           let result = `<strong>${params[0].axisValue}年</strong><br/>`
@@ -3667,7 +3915,7 @@ const renderSubjectAverageChart = () => {
       },
       xAxis: {
         type: 'category',
-        boundaryGap: false,
+        boundaryGap: true,
         data: categories,
         axisLabel: {
           fontSize: 12
@@ -3697,6 +3945,11 @@ const renderSubjectAverageChart = () => {
       animationEasing: 'cubicOut'
     }
     
+    // 修改Y軸設置
+    option.yAxis.min = 0
+    option.yAxis.max = 100
+    option.yAxis.splitLine.lineStyle.opacity = 0.3
+    
     subjectAverageChartInstance.setOption(option)
   } catch (error) {
     console.error('渲染大一各科平均成績圖表時出錯:', error)
@@ -3709,46 +3962,62 @@ const renderGenderSubjectChart = () => {
   
   try {
     const data = genderSubjectStats.value
+    const analysisMode = data.analysis_mode || 'yearly'
     
-    // 準備圖表數據 - 創建年度+科目的組合分類
-    const firstSubject = data.subjects[0]
-    const firstSubjectData = data.subject_details[firstSubject] || []
-    const years = firstSubjectData.map(item => item.year)
-    
-    // 創建年度+科目的分類標籤
-    const categories = []
-    years.forEach(year => {
-      data.subjects.forEach(subject => {
-        categories.push(`${year}\n${subject}`)
-      })
-    })
-    
-    const series = []
+    let categories = []
+    let maleData = []
+    let femaleData = []
+    let chartTitle = ''
     
     // 顏色配置：男生用藍色系，女生用紅色系
     const maleColor = '#4A90E2'
     const femaleColor = '#E24A6B'
     
-    // 準備男女生數據
-    const maleData = []
-    const femaleData = []
-    
-    years.forEach(year => {
-      data.subjects.forEach(subject => {
-        const subjectYearlyData = data.subject_details[subject] || []
-        const yearData = subjectYearlyData.find(item => item.year === year)
-        
-        if (yearData) {
-          maleData.push(yearData.male_avg !== null ? yearData.male_avg : null)
-          femaleData.push(yearData.female_avg !== null ? yearData.female_avg : null)
-        } else {
-          maleData.push(null)
-          femaleData.push(null)
-        }
-      })
-    })
+    if (analysisMode === 'overall') {
+      // 整體平均分析模式：以科目為橫軸
+      chartTitle = '各科目性別成績對比（整體平均）'
       
-    // 創建男女生的series
+      if (data.subject_comparison) {
+        data.subject_comparison.forEach(item => {
+          categories.push(item.subject)
+          maleData.push(item.male_avg)
+          femaleData.push(item.female_avg)
+        })
+      }
+    } else {
+      // 按年度分析模式：年度+科目組合
+      chartTitle = '性別科目成績趨勢分析'
+      
+      const firstSubject = data.subjects[0]
+      const firstSubjectData = data.subject_details[firstSubject] || []
+      const years = firstSubjectData.map(item => item.year)
+      
+      // 創建年度+科目的分類標籤
+      years.forEach(year => {
+        data.subjects.forEach(subject => {
+          categories.push(`${year}\n${subject}`)
+        })
+      })
+      
+      // 準備男女生數據
+      years.forEach(year => {
+        data.subjects.forEach(subject => {
+          const subjectYearlyData = data.subject_details[subject] || []
+          const yearData = subjectYearlyData.find(item => item.year === year)
+          
+          if (yearData) {
+            maleData.push(yearData.male_avg !== null ? yearData.male_avg : null)
+            femaleData.push(yearData.female_avg !== null ? yearData.female_avg : null)
+          } else {
+            maleData.push(null)
+            femaleData.push(null)
+          }
+        })
+      })
+    }
+      
+    // 創建series
+    const series = []
     series.push({
       name: '男生平均成績',
       type: 'bar',
@@ -3803,7 +4072,7 @@ const renderGenderSubjectChart = () => {
     
     const option = {
       title: {
-        text: '性別科目成績差異分析',
+        text: chartTitle,
         left: 'center',
         textStyle: {
           fontSize: 18,
@@ -3816,15 +4085,26 @@ const renderGenderSubjectChart = () => {
           type: 'shadow'
         },
         formatter: (params) => {
-          const categoryParts = params[0].axisValue.split('\n')
-          const year = categoryParts[0]
-          const subject = categoryParts[1] || ''
-          let result = `<strong>${year}年 - ${subject}</strong><br/>`
-          params.forEach(param => {
-            if (param.value !== null) {
-              result += `${param.seriesName}: <strong>${param.value.toFixed(1)}分</strong><br/>`
-            }
-          })
+          let result = ''
+          if (analysisMode === 'overall') {
+            const subject = params[0].axisValue
+            result = `<strong>${subject}</strong><br/>`
+            params.forEach(param => {
+              if (param.value !== null) {
+                result += `${param.seriesName}: <strong>${param.value.toFixed(1)}分</strong><br/>`
+              }
+            })
+          } else {
+            const categoryParts = params[0].axisValue.split('\n')
+            const year = categoryParts[0]
+            const subject = categoryParts[1] || ''
+            result = `<strong>${year}年 - ${subject}</strong><br/>`
+            params.forEach(param => {
+              if (param.value !== null) {
+                result += `${param.seriesName}: <strong>${param.value.toFixed(1)}分</strong><br/>`
+              }
+            })
+          }
           return result
         }
       },
@@ -3852,12 +4132,14 @@ const renderGenderSubjectChart = () => {
       },
       xAxis: {
         type: 'category',
-        boundaryGap: false,
+        boundaryGap: true,
         data: categories,
         axisLabel: {
-          fontSize: 12
+          fontSize: analysisMode === 'overall' ? 12 : 10,
+          rotate: analysisMode === 'overall' ? 0 : 45,
+          interval: 0
         },
-        name: '年度',
+        name: analysisMode === 'overall' ? '科目' : '年度-科目',
         nameLocation: 'middle',
         nameGap: 25
       },
@@ -3881,26 +4163,6 @@ const renderGenderSubjectChart = () => {
       animationDuration: 1500,
       animationEasing: 'cubicOut'
     }
-    
-    // 更新xAxis配置以支援分區顯示
-    option.xAxis.boundaryGap = true
-    option.xAxis.axisLabel = {
-      fontSize: 10,
-      rotate: 45,
-      interval: 0,
-      formatter: function(value) {
-        return value.replace('\\n', '\n')
-      }
-    }
-    option.xAxis.axisTick = {
-      alignWithLabel: true
-    }
-    option.xAxis.name = '年度 × 科目'
-    option.xAxis.nameGap = 70
-    
-    // 更新grid配置
-    option.grid.left = '8%'
-    option.grid.bottom = '20%'
     
     genderSubjectChartInstance.setOption(option)
   } catch (error) {
@@ -4355,6 +4617,26 @@ onMounted(() => {
   color: #303133;
 }
 
+/* 科目分組樣式 */
+.subject-groups {
+  background: #f5f7fa;
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px solid #e4e7ed;
+}
+
+.group-item {
+  background: white;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid #dcdfe6;
+  margin-bottom: 10px;
+}
+
+.group-item:last-child {
+  margin-bottom: 0;
+}
+
 .button-group {
   margin-top: 20px;
 }
@@ -4456,5 +4738,35 @@ onMounted(() => {
 
 :deep(.el-table .top-ten-row:hover) {
   background-color: #ecf5ff !important;
+}
+
+/* 統計資訊網格 */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-top: 15px;
+}
+
+.stats-item {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border-left: 4px solid #409eff;
+}
+
+.stats-label {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.stats-value {
+  font-size: 16px;
+  font-weight: bold;
+  color: #303133;
 }
 </style>
