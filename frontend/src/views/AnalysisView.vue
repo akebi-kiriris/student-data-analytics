@@ -210,6 +210,32 @@
           </div>
           <p>分析不同入學管道學生在各科目的平均成績表現，支援入學管道分組</p>
         </div>
+
+        <!-- 高中類型科目成績分析 -->
+        <div 
+          class="analysis-block" 
+          :class="{ active: activeBlock === 'school-type-subject' }"
+          @click="setActiveBlock('school-type-subject')"
+        >
+          <div class="block-header">
+            <span class="nav-icon">🏫</span>
+            <h3>高中類型科目成績分析</h3>
+          </div>
+          <p>分析不同高中類型學生在各科目的平均成績表現，支援高中類型分組</p>
+        </div>
+
+        <!-- 地區科目成績分析 -->
+        <div 
+          class="analysis-block" 
+          :class="{ active: activeBlock === 'region-subject' }"
+          @click="setActiveBlock('region-subject')"
+        >
+          <div class="block-header">
+            <span class="nav-icon">🗺️</span>
+            <h3>地區科目成績分析</h3>
+          </div>
+          <p>分析不同地理區域學生在各科目的平均成績表現，支援地區分組</p>
+        </div>
       </div>
 
       <!-- 分析內容區塊 -->
@@ -903,6 +929,413 @@
                            parseFloat(scope.row[method]) >= 60 ? '#f56c6c' : '#909399'
                   }">
                     {{ scope.row[method] }}
+                  </span>
+                  <span v-else style="color: #ccc;">-</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 高中類型科目成績分析區塊 -->
+      <div v-if="activeBlock === 'school-type-subject'" class="analysis-content">
+        <el-divider>高中類型科目成績分析</el-divider>
+        
+        <div class="form-group">
+          <label>年度欄位：</label>
+          <el-select v-model="schoolTypeSubjectYearCol" placeholder="自動選擇年度欄位" style="width: 300px" :disabled="columns.length === 0">
+            <el-option
+              v-for="col in columns"
+              :key="col"
+              :label="col"
+              :value="col"
+            />
+          </el-select>
+        </div>
+
+        <div class="form-group">
+          <label>高中類型欄位：</label>
+          <el-select v-model="schoolTypeSubjectTypeCol" placeholder="自動選擇高中類型欄位" style="width: 300px" :disabled="columns.length === 0">
+            <el-option
+              v-for="col in columns"
+              :key="col"
+              :label="col"
+              :value="col"
+            />
+          </el-select>
+        </div>
+
+        <div class="form-group">
+          <label>選擇科目：</label>
+          <el-select v-model="schoolTypeSelectedSubjects" multiple placeholder="請選擇要分析的科目" style="width: 500px" :disabled="columns.length === 0">
+            <el-option
+              v-for="col in numericColumns"
+              :key="col"
+              :label="col"
+              :value="col"
+            />
+          </el-select>
+        </div>
+
+        <div class="form-group">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <el-switch v-model="enableSchoolTypeGrouping" />
+            <label>啟用高中類型分組</label>
+            <el-tooltip content="啟用後可將多個高中類型合併分析，例如將「國立」和「市立」合併為「公立學校」進行比較" placement="top">
+              <el-icon><InfoFilled /></el-icon>
+            </el-tooltip>
+          </div>
+          
+          <div v-if="enableSchoolTypeGrouping" class="subject-groups">
+            <div v-for="(group, index) in schoolTypeGroups" :key="index" class="group-item">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                <el-input 
+                  v-model="group.name" 
+                  placeholder="分組名稱（如：公立學校）" 
+                  style="width: 200px"
+                />
+                <el-select 
+                  v-model="group.types" 
+                  multiple 
+                  placeholder="選擇分組高中類型" 
+                  style="width: 400px"
+                >
+                  <el-option value="國立" label="國立" />
+                  <el-option value="私立" label="私立" />
+                  <el-option value="財團" label="財團" />
+                  <el-option value="市立" label="市立" />
+                  <el-option value="縣立" label="縣立" />
+                  <el-option value="國大轉" label="國大轉" />
+                  <el-option value="私大轉" label="私大轉" />
+                  <el-option value="科大轉" label="科大轉" />
+                  <el-option value="僑生" label="僑生" />
+                  <el-option value="其他" label="其他" />
+                </el-select>
+                <el-button 
+                  type="danger" 
+                  :icon="Delete" 
+                  size="small" 
+                  @click="removeSchoolTypeGroup(index)"
+                  v-if="schoolTypeGroups.length > 1"
+                >
+                  刪除
+                </el-button>
+              </div>
+            </div>
+            <el-button 
+              type="primary" 
+              :icon="Plus" 
+              size="small" 
+              @click="addSchoolTypeGroup"
+            >
+              新增分組
+            </el-button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>年份篩選：</label>
+          <el-select 
+            v-model="schoolTypeSelectedYears" 
+            multiple 
+            placeholder="選擇年份（留空表示所有年份）" 
+            style="width: 100%; max-width: 600px"
+            clearable
+          >
+            <el-option
+              v-for="year in availableYears"
+              :key="year"
+              :label="year"
+              :value="year"
+            />
+          </el-select>
+        </div>
+
+        <div class="button-group">
+          <el-button 
+            type="success" 
+            @click="getSchoolTypeSubjectStats"
+            :disabled="!schoolTypeSubjectYearCol || !schoolTypeSubjectTypeCol || !schoolTypeSelectedSubjects || schoolTypeSelectedSubjects.length === 0"
+          >
+            開始分析
+          </el-button>
+        </div>
+        
+        <!-- 高中類型科目成績分析結果 -->
+        <div v-if="schoolTypeSubjectStats" class="results-panel">
+          <div class="statistics-summary">
+            <div class="stat-card">
+              <h4>📊 分析概況</h4>
+              <p><strong>分組模式：</strong>{{ schoolTypeSubjectStats.enable_grouping ? '高中類型分組' : '個別高中類型' }}</p>
+              <p><strong>分析科目：</strong>{{ schoolTypeSubjectStats.subjects ? schoolTypeSubjectStats.subjects.join('、') : '-' }}</p>
+              <p><strong>年度範圍：</strong>{{ schoolTypeSubjectStats.years ? schoolTypeSubjectStats.years[0] + ' - ' + schoolTypeSubjectStats.years[schoolTypeSubjectStats.years.length-1] : '-' }}</p>
+              <p><strong>高中類型欄位：</strong>{{ schoolTypeSubjectTypeCol }}</p>
+            </div>
+          </div>
+          
+          <div class="chart-with-export">
+            <div id="schoolTypeSubjectChart" style="width: 100%; height: 600px;"></div>
+            <el-button 
+              type="primary" 
+              class="export-btn"
+              @click="showEChartsExportDialog('schoolTypeSubjectChart', '高中類型科目成績差異分析', schoolTypeSubjectStats)"
+              icon="Download"
+            >
+              📊 導出圖表
+            </el-button>
+          </div>
+          
+          <!-- 詳細數據表格 -->
+          <div class="table-container">
+            <h4>📋 詳細數據表格</h4>
+            <el-table 
+              v-if="schoolTypeSubjectStats && schoolTypeSubjectStats.school_types"
+              :data="schoolTypeSubjectTableData" 
+              stripe 
+              border 
+              style="width: 100%"
+              max-height="500"
+            >
+              <!-- 年度 -->
+              <el-table-column prop="year" label="年度" width="80" align="center" fixed="left">
+                <template #default="scope">
+                  <strong>{{ scope.row.year }}</strong>
+                </template>
+              </el-table-column>
+              
+              <!-- 科目 -->
+              <el-table-column prop="subject" label="科目" width="120" align="center" fixed="left">
+                <template #default="scope">
+                  <strong>{{ scope.row.subject }}</strong>
+                </template>
+              </el-table-column>
+              
+              <!-- 各高中類型的成績 -->
+              <el-table-column 
+                v-for="schoolType in schoolTypeSubjectStats.school_types" 
+                :key="schoolType" 
+                :label="schoolType"
+                width="100"
+                align="center"
+              >
+                <template #default="scope">
+                  <span v-if="scope.row[schoolType] !== null" :style="{
+                    color: parseFloat(scope.row[schoolType]) >= 80 ? '#67c23a' : 
+                           parseFloat(scope.row[schoolType]) >= 70 ? '#e6a23c' : 
+                           parseFloat(scope.row[schoolType]) >= 60 ? '#f56c6c' : '#909399'
+                  }">
+                    {{ scope.row[schoolType] }}
+                  </span>
+                  <span v-else style="color: #ccc;">-</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 地區科目成績分析區塊 -->
+      <div v-if="activeBlock === 'region-subject'" class="analysis-content">
+        <el-divider>地區科目成績分析</el-divider>
+        
+        <div class="form-group">
+          <label>年度欄位：</label>
+          <el-select v-model="regionSubjectYearCol" placeholder="自動選擇年度欄位" style="width: 300px" :disabled="columns.length === 0">
+            <el-option
+              v-for="col in columns"
+              :key="col"
+              :label="col"
+              :value="col"
+            />
+          </el-select>
+        </div>
+
+        <div class="form-group">
+          <label>地區欄位：</label>
+          <el-select v-model="regionSubjectRegionCol" placeholder="自動選擇地區欄位" style="width: 300px" :disabled="columns.length === 0">
+            <el-option
+              v-for="col in columns"
+              :key="col"
+              :label="col"
+              :value="col"
+            />
+          </el-select>
+        </div>
+
+        <div class="form-group">
+          <label>選擇科目：</label>
+          <el-select v-model="regionSelectedSubjects" multiple placeholder="請選擇要分析的科目" style="width: 500px" :disabled="columns.length === 0">
+            <el-option
+              v-for="col in numericColumns"
+              :key="col"
+              :label="col"
+              :value="col"
+            />
+          </el-select>
+        </div>
+
+        <div class="form-group">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <el-switch v-model="enableRegionGrouping" />
+            <label>啟用地區分組</label>
+            <el-tooltip content="啟用後可將多個地區合併分析，例如將「臺北市」和「新北市」合併為「北部地區」進行比較" placement="top">
+              <el-icon><InfoFilled /></el-icon>
+            </el-tooltip>
+          </div>
+          
+          <div v-if="enableRegionGrouping" class="subject-groups">
+            <div v-for="(group, index) in regionGroups" :key="index" class="group-item">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                <el-input 
+                  v-model="group.name" 
+                  placeholder="分組名稱（如：北部地區）" 
+                  style="width: 200px"
+                />
+                <el-select 
+                  v-model="group.regions" 
+                  multiple 
+                  placeholder="選擇分組地區" 
+                  style="width: 400px"
+                >
+                  <el-option value="臺北市" label="臺北市" />
+                  <el-option value="新北市" label="新北市" />
+                  <el-option value="桃園市" label="桃園市" />
+                  <el-option value="臺中市" label="臺中市" />
+                  <el-option value="臺南市" label="臺南市" />
+                  <el-option value="高雄市" label="高雄市" />
+                  <el-option value="基隆市" label="基隆市" />
+                  <el-option value="新竹市" label="新竹市" />
+                  <el-option value="新竹縣" label="新竹縣" />
+                  <el-option value="苗栗縣" label="苗栗縣" />
+                  <el-option value="彰化縣" label="彰化縣" />
+                  <el-option value="南投縣" label="南投縣" />
+                  <el-option value="雲林縣" label="雲林縣" />
+                  <el-option value="嘉義市" label="嘉義市" />
+                  <el-option value="嘉義縣" label="嘉義縣" />
+                  <el-option value="屏東縣" label="屏東縣" />
+                  <el-option value="宜蘭縣" label="宜蘭縣" />
+                  <el-option value="花蓮縣" label="花蓮縣" />
+                  <el-option value="臺東縣" label="臺東縣" />
+                  <el-option value="澎湖縣" label="澎湖縣" />
+                  <el-option value="金門縣" label="金門縣" />
+                  <el-option value="連江縣" label="連江縣" />
+                  <el-option value="其他" label="其他" />
+                </el-select>
+                <el-button 
+                  type="danger" 
+                  :icon="Delete" 
+                  size="small" 
+                  @click="removeRegionGroup(index)"
+                  v-if="regionGroups.length > 1"
+                >
+                  刪除
+                </el-button>
+              </div>
+            </div>
+            <el-button 
+              type="primary" 
+              :icon="Plus" 
+              size="small" 
+              @click="addRegionGroup"
+            >
+              新增分組
+            </el-button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>年份篩選：</label>
+          <el-select 
+            v-model="regionSelectedYears" 
+            multiple 
+            placeholder="選擇年份（留空表示所有年份）" 
+            style="width: 100%; max-width: 600px"
+            clearable
+          >
+            <el-option
+              v-for="year in availableYears"
+              :key="year"
+              :label="year"
+              :value="year"
+            />
+          </el-select>
+        </div>
+
+        <div class="button-group">
+          <el-button 
+            type="success" 
+            @click="getRegionSubjectStats"
+            :disabled="!regionSubjectYearCol || !regionSubjectRegionCol || !regionSelectedSubjects || regionSelectedSubjects.length === 0"
+          >
+            開始分析
+          </el-button>
+        </div>
+        
+        <!-- 地區科目成績分析結果 -->
+        <div v-if="regionSubjectStats" class="results-panel">
+          <div class="statistics-summary">
+            <div class="stat-card">
+              <h4>📊 分析概況</h4>
+              <p><strong>分組模式：</strong>{{ regionSubjectStats.enable_grouping ? '地區分組' : '個別地區' }}</p>
+              <p><strong>分析科目：</strong>{{ regionSubjectStats.subjects ? regionSubjectStats.subjects.join('、') : '-' }}</p>
+              <p><strong>年度範圍：</strong>{{ regionSubjectStats.years ? regionSubjectStats.years[0] + ' - ' + regionSubjectStats.years[regionSubjectStats.years.length-1] : '-' }}</p>
+              <p><strong>地區欄位：</strong>{{ regionSubjectRegionCol }}</p>
+            </div>
+          </div>
+          
+          <div class="chart-with-export">
+            <div id="regionSubjectChart" style="width: 100%; height: 600px;"></div>
+            <el-button 
+              type="primary" 
+              class="export-btn"
+              @click="showEChartsExportDialog('regionSubjectChart', '地區科目成績差異分析', regionSubjectStats)"
+              icon="Download"
+            >
+              📊 導出圖表
+            </el-button>
+          </div>
+          
+          <!-- 詳細數據表格 -->
+          <div class="table-container">
+            <h4>📋 詳細數據表格</h4>
+            <el-table 
+              v-if="regionSubjectStats && regionSubjectStats.regions"
+              :data="regionSubjectTableData" 
+              stripe 
+              border 
+              style="width: 100%"
+              max-height="500"
+            >
+              <!-- 年度 -->
+              <el-table-column prop="year" label="年度" width="80" align="center" fixed="left">
+                <template #default="scope">
+                  <strong>{{ scope.row.year }}</strong>
+                </template>
+              </el-table-column>
+              
+              <!-- 科目 -->
+              <el-table-column prop="subject" label="科目" width="120" align="center" fixed="left">
+                <template #default="scope">
+                  <strong>{{ scope.row.subject }}</strong>
+                </template>
+              </el-table-column>
+              
+              <!-- 各地區的成績 -->
+              <el-table-column 
+                v-for="region in regionSubjectStats.regions" 
+                :key="region" 
+                :label="region"
+                width="100"
+                align="center"
+              >
+                <template #default="scope">
+                  <span v-if="scope.row[region] !== null" :style="{
+                    color: parseFloat(scope.row[region]) >= 80 ? '#67c23a' : 
+                           parseFloat(scope.row[region]) >= 70 ? '#e6a23c' : 
+                           parseFloat(scope.row[region]) >= 60 ? '#f56c6c' : '#909399'
+                  }">
+                    {{ scope.row[region] }}
                   </span>
                   <span v-else style="color: #ccc;">-</span>
                 </template>
@@ -1776,6 +2209,29 @@ const admissionGroups = ref([
   { name: '', methods: [] }
 ])
 const admissionSubjectStats = ref(null)
+
+// 高中類型科目成績分析響應式變數
+const schoolTypeSubjectYearCol = ref('')
+const schoolTypeSubjectTypeCol = ref('')
+const schoolTypeSelectedSubjects = ref([])
+const schoolTypeSelectedYears = ref([])
+const enableSchoolTypeGrouping = ref(false)
+const schoolTypeGroups = ref([
+  { name: '', types: [] }
+])
+const schoolTypeSubjectStats = ref(null)
+
+// 地區科目成績分析響應式變數
+const regionSubjectYearCol = ref('')
+const regionSubjectRegionCol = ref('')
+const regionSelectedSubjects = ref([])
+const regionSelectedYears = ref([])
+const enableRegionGrouping = ref(false)
+const regionGroups = ref([
+  { name: '', regions: [] }
+])
+const regionSubjectStats = ref(null)
+
 const genderSubjectStats = ref(null)
 const activeBlock = ref('')
 const currentStats = ref(null)
@@ -1801,6 +2257,8 @@ let topSchoolsChartInstance = null
 let subjectAverageChartInstance = null
 let genderSubjectChartInstance = null
 let admissionSubjectChartInstance = null
+let schoolTypeSubjectChartInstance = null
+let regionSubjectChartInstance = null
 
 // 計算屬性
 const numericColumns = computed(() => {
@@ -1868,10 +2326,72 @@ const admissionSubjectTableData = computed(() => {
         const methodData = method_details[method] || []
         const yearData = methodData.find(item => item.year === year)
         
-        if (yearData && yearData.subjects && yearData.subjects[subject] !== undefined) {
+        if (yearData && yearData.subjects && yearData.subjects[subject] !== undefined && yearData.subjects[subject] !== null) {
           rowData[method] = yearData.subjects[subject].toFixed(1)
         } else {
           rowData[method] = null
+        }
+      })
+      
+      tableData.push(rowData)
+    })
+  })
+  
+  return tableData
+})
+
+// 高中類型科目表格數據
+const schoolTypeSubjectTableData = computed(() => {
+  if (!schoolTypeSubjectStats.value || !schoolTypeSubjectStats.value.type_details) return []
+  
+  const tableData = []
+  const { years = [], subjects = [], school_types = [], type_details = {} } = schoolTypeSubjectStats.value
+  
+  // 為每年每科目創建一行
+  years.forEach(year => {
+    subjects.forEach(subject => {
+      const rowData = { year, subject }
+      
+      // 為每個高中類型添加成績數據
+      school_types.forEach(type => {
+        const typeData = type_details[type] || []
+        const yearData = typeData.find(item => item.year === year)
+        
+        if (yearData && yearData.subjects && yearData.subjects[subject] !== undefined && yearData.subjects[subject] !== null) {
+          rowData[type] = yearData.subjects[subject].toFixed(1)
+        } else {
+          rowData[type] = null
+        }
+      })
+      
+      tableData.push(rowData)
+    })
+  })
+  
+  return tableData
+})
+
+// 地區科目表格數據
+const regionSubjectTableData = computed(() => {
+  if (!regionSubjectStats.value || !regionSubjectStats.value.region_details) return []
+  
+  const tableData = []
+  const { years = [], subjects = [], regions = [], region_details = {} } = regionSubjectStats.value
+  
+  // 為每年每科目創建一行
+  years.forEach(year => {
+    subjects.forEach(subject => {
+      const rowData = { year, subject }
+      
+      // 為每個地區添加成績數據
+      regions.forEach(region => {
+        const regionData = region_details[region] || []
+        const yearData = regionData.find(item => item.year === year)
+        
+        if (yearData && yearData.subjects && yearData.subjects[subject] !== undefined && yearData.subjects[subject] !== null) {
+          rowData[region] = Number(yearData.subjects[subject]).toFixed(1)
+        } else {
+          rowData[region] = null
         }
       })
       
@@ -1900,6 +2420,8 @@ const setActiveBlock = (blockName) => {
   subjectAverageStats.value = null
   genderSubjectStats.value = null
   admissionSubjectStats.value = null
+  schoolTypeSubjectStats.value = null
+  regionSubjectStats.value = null
   rawData.value = []
   
   // 清理圖表
@@ -1944,6 +2466,14 @@ const setActiveBlock = (blockName) => {
   if (admissionSubjectChartInstance) {
     admissionSubjectChartInstance.dispose()
     admissionSubjectChartInstance = null
+  }
+  if (schoolTypeSubjectChartInstance) {
+    schoolTypeSubjectChartInstance.dispose()
+    schoolTypeSubjectChartInstance = null
+  }
+  if (regionSubjectChartInstance) {
+    regionSubjectChartInstance.dispose()
+    regionSubjectChartInstance = null
   }
 }
 
@@ -2108,6 +2638,10 @@ const autoSelectColumns = () => {
     genderSubjectYearCol.value = yearColumns[0]
     // 設置入學管道科目分析的年度欄位
     admissionSubjectYearCol.value = yearColumns[0]
+    // 設置高中類型科目分析的年度欄位
+    schoolTypeSubjectYearCol.value = yearColumns[0]
+    // 設置地區科目分析的年度欄位
+    regionSubjectYearCol.value = yearColumns[0]
   }
   
   // 自動選擇學校欄位（按優先級排序）
@@ -2193,7 +2727,43 @@ const autoSelectColumns = () => {
   })
   if (regionColumns.length > 0) {
     geoRegionCol.value = regionColumns[0]
-
+    // 設置地區科目分析的地區欄位
+    regionSubjectRegionCol.value = regionColumns[0]
+  }
+  
+  // 自動選擇高中類型欄位
+  const schoolTypeColumns = columns.value.filter(col => {
+    const colLower = col.toLowerCase()
+    return col.includes('高中別') || 
+           col.includes('高中類型') || 
+           col.includes('學校類型') ||
+           col.includes('學校別') ||
+           col.includes('類別') ||
+           col.includes('高中性質') ||
+           colLower.includes('school_type') ||
+           colLower.includes('type')
+  })
+  
+  // 按優先級排序高中類型欄位
+  const schoolTypePriorityOrder = ['高中別', '高中類型', '學校類型', '學校別', '類別']
+  let selectedSchoolTypeCol = null
+  
+  for (const priority of schoolTypePriorityOrder) {
+    const found = schoolTypeColumns.find(col => col.includes(priority))
+    if (found) {
+      selectedSchoolTypeCol = found
+      break
+    }
+  }
+  
+  // 如果沒找到優先級欄位，使用第一個匹配的欄位
+  if (!selectedSchoolTypeCol && schoolTypeColumns.length > 0) {
+    selectedSchoolTypeCol = schoolTypeColumns[0]
+  }
+  
+  if (selectedSchoolTypeCol) {
+    // 設置高中類型科目分析的高中類型欄位
+    schoolTypeSubjectTypeCol.value = selectedSchoolTypeCol
   }
   
   // 自動選擇科目欄位（用於多科目分析）
@@ -2216,6 +2786,10 @@ const autoSelectColumns = () => {
     selectedSubjects.value = subjectColumns.slice(0, 3)
     // 同時設置入學管道科目分析的科目欄位
     admissionSelectedSubjects.value = subjectColumns.slice(0, 3)
+    // 設置高中類型科目分析的科目欄位
+    schoolTypeSelectedSubjects.value = subjectColumns.slice(0, 3)
+    // 設置地區科目分析的科目欄位
+    regionSelectedSubjects.value = subjectColumns.slice(0, 3)
   }
   
   // 自動選擇第一個數值型欄位作為統計欄位
@@ -2487,6 +3061,28 @@ const addAdmissionGroup = () => {
 const removeAdmissionGroup = (index) => {
   if (admissionGroups.value.length > 1) {
     admissionGroups.value.splice(index, 1)
+  }
+}
+
+// 高中類型分組管理函數
+const addSchoolTypeGroup = () => {
+  schoolTypeGroups.value.push({ name: '', types: [] })
+}
+
+const removeSchoolTypeGroup = (index) => {
+  if (schoolTypeGroups.value.length > 1) {
+    schoolTypeGroups.value.splice(index, 1)
+  }
+}
+
+// 地區分組管理函數
+const addRegionGroup = () => {
+  regionGroups.value.push({ name: '', regions: [] })
+}
+
+const removeRegionGroup = (index) => {
+  if (regionGroups.value.length > 1) {
+    regionGroups.value.splice(index, 1)
   }
 }
 
@@ -4544,12 +5140,11 @@ const renderAdmissionSubjectChart = () => {
     const series = []
     
     if (data.subjects && data.years && data.admission_methods) {
-      // 創建年度+科目的分類標籤
-      data.years.forEach(year => {
-        data.subjects.forEach(subject => {
-          categories.push(`${year}\n${subject}`)
-        })
-      })
+      // 過濾掉空的年份
+      const validYears = data.years.filter(year => year && year.trim() !== '')
+      
+      // 橫軸為年度
+      categories.push(...validYears)
       
       // 決定要顯示的入學管道 - 根據是否啟用分組來篩選
       let displayMethods = []
@@ -4579,17 +5174,28 @@ const renderAdmissionSubjectChart = () => {
       displayMethods.forEach((method, index) => {
         const methodData = []
         
-        data.years.forEach(year => {
-          data.subjects.forEach(subject => {
-            const subjectYearlyData = data.method_details[method] || []
-            const yearData = subjectYearlyData.find(item => item.year === year)
+        validYears.forEach(year => {
+          const subjectYearlyData = data.method_details[method] || []
+          const yearData = subjectYearlyData.find(item => item.year === year)
+          
+          if (yearData && yearData.subjects) {
+            // 計算該年度該入學管道所有選定科目的平均成績
+            const subjectScores = []
+            data.subjects.forEach(subject => {
+              if (yearData.subjects[subject] !== undefined && yearData.subjects[subject] !== null) {
+                subjectScores.push(yearData.subjects[subject])
+              }
+            })
             
-            if (yearData && yearData.subjects && yearData.subjects[subject] !== undefined) {
-              methodData.push(yearData.subjects[subject])
+            if (subjectScores.length > 0) {
+              const avgScore = subjectScores.reduce((sum, score) => sum + score, 0) / subjectScores.length
+              methodData.push(avgScore)
             } else {
               methodData.push(null)
             }
-          })
+          } else {
+            methodData.push(null)
+          }
         })
         
         // 檢查是否有有效數據
@@ -4638,10 +5244,515 @@ const renderAdmissionSubjectChart = () => {
           type: 'shadow'
         },
         formatter: (params) => {
-          const categoryParts = params[0].axisValue.split('\n')
-          const year = categoryParts[0]
-          const subject = categoryParts[1] || ''
-          let result = `<strong>${year}年 - ${subject}</strong><br/>`
+          const year = params[0].axisValue
+          let result = `<strong>${year}年度平均成績</strong><br/>`
+          params.forEach(param => {
+            if (param.value !== null) {
+              result += `${param.seriesName}: <strong>${param.value.toFixed(1)}分</strong><br/>`
+            }
+          })
+          return result
+        }
+      },
+      legend: {
+        data: series.map(s => s.name),
+        top: '10%',
+        type: 'scroll',
+        orient: 'horizontal'
+      },
+      grid: {
+        left: '8%',
+        right: '8%',
+        bottom: '30%',
+        top: '35%',
+        containLabel: true
+      },
+      toolbox: {
+        feature: {
+          saveAsImage: { title: '保存圖片' },
+          restore: { title: '還原' },
+          dataZoom: { title: { zoom: '區域縮放', back: '縮放還原' } }
+        },
+        top: '5%',
+        right: '2%'
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: true,
+        data: categories,
+        axisLabel: {
+          fontSize: 12,
+          rotate: 0,
+          interval: 0,
+          overflow: 'break'
+        },
+        name: '年度',
+        nameLocation: 'middle',
+        nameGap: 50
+      },
+      yAxis: {
+        type: 'value',
+        name: '平均成績',
+        nameLocation: 'middle',
+        nameGap: 40,
+        min: 0,
+        max: 100,
+        axisLabel: {
+          formatter: '{value}分',
+          fontSize: 12
+        },
+        splitLine: {
+          lineStyle: {
+            type: 'dashed',
+            opacity: 0.3
+          }
+        }
+      },
+      series: series,
+      animationDuration: 1500,
+      animationEasing: 'cubicOut'
+    }
+    
+    console.log('最終圖表配置:', option)
+    console.log('最終系列數據:', series)
+    
+    admissionSubjectChartInstance.setOption(option)
+  } catch (error) {
+    console.error('渲染入學管道科目成績分析圖表時出錯:', error)
+  }
+}
+
+// 高中類型科目成績分析
+const getSchoolTypeSubjectStats = async () => {
+  try {
+    console.log('高中類型科目成績分析請求')
+    console.log('schoolTypeSelectedSubjects.value:', schoolTypeSelectedSubjects.value)
+    console.log('schoolTypeSubjectYearCol.value:', schoolTypeSubjectYearCol.value)
+    console.log('schoolTypeSubjectTypeCol.value:', schoolTypeSubjectTypeCol.value)
+    
+    if (!schoolTypeSubjectYearCol.value || !schoolTypeSubjectTypeCol.value || !schoolTypeSelectedSubjects.value || schoolTypeSelectedSubjects.value.length === 0) {
+      ElMessage.error('請選擇年度欄位、高中類型欄位和科目')
+      return
+    }
+    
+    // 驗證高中類型分組設置
+    if (enableSchoolTypeGrouping.value) {
+      const validGroups = schoolTypeGroups.value.filter(group => 
+        group.name.trim() !== '' && group.types.length > 0
+      )
+      if (validGroups.length === 0) {
+        ElMessage.error('啟用高中類型分組時，請至少設置一個有效的分組（包含名稱和高中類型）')
+        return
+      }
+    }
+    
+    const requestData = {
+      table_name: selectedTable.value,
+      year_col: schoolTypeSubjectYearCol.value,
+      school_type_col: schoolTypeSubjectTypeCol.value,
+      subjects: schoolTypeSelectedSubjects.value,
+      years: schoolTypeSelectedYears.value && schoolTypeSelectedYears.value.length > 0 ? schoolTypeSelectedYears.value : null,
+      enable_grouping: enableSchoolTypeGrouping.value,
+      school_type_groups: enableSchoolTypeGrouping.value ? 
+        schoolTypeGroups.value.filter(group => group.name.trim() !== '' && group.types.length > 0) : null
+    }
+    
+    console.log('高中類型科目成績分析請求參數:', requestData)
+    
+    const data = await apiService.post(API_ENDPOINTS.SCHOOL_TYPE_SUBJECT_STATS, requestData)
+    
+    console.log('高中類型科目成績分析結果:', data)
+    console.log('返回的高中類型:', data.school_types)
+    console.log('返回的科目:', data.subjects)
+    console.log('返回的年份:', data.years)
+    console.log('類型詳情:', data.type_details)
+    
+    schoolTypeSubjectStats.value = data
+    currentStats.value = data
+    
+    // 等待 DOM 更新
+    await nextTick()
+    
+    // 初始化圖表
+    const chartDom = document.getElementById('schoolTypeSubjectChart')
+    if (chartDom) {
+      if (schoolTypeSubjectChartInstance) {
+        schoolTypeSubjectChartInstance.dispose()
+        schoolTypeSubjectChartInstance = null
+      }
+      schoolTypeSubjectChartInstance = echarts.init(chartDom)
+      renderSchoolTypeSubjectChart()
+    }
+    
+  } catch (error) {
+    console.error('高中類型科目成績分析失敗:', error)
+    ElMessage.error('高中類型科目成績分析失敗')
+  }
+}
+
+// 高中類型科目成績分析圖表
+const renderSchoolTypeSubjectChart = () => {
+  if (!schoolTypeSubjectChartInstance || !schoolTypeSubjectStats.value) return
+  
+  try {
+    const data = schoolTypeSubjectStats.value
+    console.log('高中類型圖表渲染數據:', data)
+    
+    // 準備圖表數據 - 創建年度+科目的組合分類
+    const categories = []
+    const series = []
+    
+    if (data.subjects && data.years && data.school_types) {
+      // 過濾掉空的年份
+      const validYears = data.years.filter(year => year && year.trim() !== '')
+      
+      // 橫軸為年度
+      categories.push(...validYears)
+      
+      // 決定要顯示的高中類型 - 根據是否啟用分組來篩選
+      let displayTypes = []
+      
+      if (enableSchoolTypeGrouping.value && schoolTypeGroups.value.length > 0) {
+        // 如果啟用了分組，只顯示分組中包含的高中類型
+        const groupedTypes = new Set()
+        schoolTypeGroups.value.forEach(group => {
+          if (group.name.trim() !== '' && group.types.length > 0) {
+            group.types.forEach(type => {
+              groupedTypes.add(type)
+            })
+          }
+        })
+        displayTypes = data.school_types.filter(type => groupedTypes.has(type))
+      } else {
+        // 如果沒有啟用分組，顯示所有高中類型
+        displayTypes = data.school_types
+      }
+      
+      console.log('要顯示的高中類型:', displayTypes)
+      console.log('categories:', categories)
+      
+      // 為每個要顯示的高中類型創建一個系列
+      const colors = ['#4A90E2', '#E24A6B', '#67C23A', '#E6A23C', '#9013FE', '#FF5722', '#009688', '#795548', '#FF9800', '#8BC34A']
+      
+      displayTypes.forEach((type, index) => {
+        const typeData = []
+        
+        validYears.forEach(year => {
+          const subjectYearlyData = data.type_details[type] || []
+          const yearData = subjectYearlyData.find(item => item.year === year)
+          
+          if (yearData && yearData.subjects) {
+            // 計算該年度該高中類型所有選定科目的平均成績
+            const subjectScores = []
+            data.subjects.forEach(subject => {
+              if (yearData.subjects[subject] !== undefined && yearData.subjects[subject] !== null) {
+                subjectScores.push(yearData.subjects[subject])
+              }
+            })
+            
+            if (subjectScores.length > 0) {
+              const avgScore = subjectScores.reduce((sum, score) => sum + score, 0) / subjectScores.length
+              typeData.push(avgScore)
+            } else {
+              typeData.push(null)
+            }
+          } else {
+            typeData.push(null)
+          }
+        })
+        
+        // 檢查是否有有效數據
+        const hasValidData = typeData.some(value => value !== null && value !== undefined)
+        console.log(`高中類型 ${type} 的數據:`, typeData, '有效數據:', hasValidData)
+        
+        if (hasValidData) {
+          const seriesConfig = {
+            name: type,
+            type: 'bar',
+            data: typeData,
+            itemStyle: {
+              color: colors[index % colors.length],
+              borderRadius: [2, 2, 0, 0]
+            },
+            emphasis: {
+              itemStyle: {
+                shadowBlur: 10,
+                shadowColor: 'rgba(0, 0, 0, 0.2)'
+              }
+            },
+            label: {
+              show: false
+            }
+          }
+          
+          series.push(seriesConfig)
+        }
+      })
+    }
+    
+    const option = {
+      title: {
+        text: '高中類型科目成績差異分析',
+        left: 'center',
+        textStyle: {
+          fontSize: 18,
+          fontWeight: 'bold'
+        }
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'shadow'
+        },
+        formatter: (params) => {
+          const year = params[0].axisValue
+          let result = `<strong>${year}年度平均成績</strong><br/>`
+          params.forEach(param => {
+            if (param.value !== null) {
+              result += `${param.seriesName}: <strong>${param.value.toFixed(1)}分</strong><br/>`
+            }
+          })
+          return result
+        }
+      },
+      legend: {
+        data: series.map(s => s.name),
+        top: '10%',
+        type: 'scroll',
+        orient: 'horizontal'
+      },
+      grid: {
+        left: '8%',
+        right: '8%',
+        bottom: '30%',
+        top: '35%',
+        containLabel: true
+      },
+      toolbox: {
+        feature: {
+          saveAsImage: { title: '保存圖片' },
+          restore: { title: '還原' },
+          dataZoom: { title: { zoom: '區域縮放', back: '縮放還原' } }
+        },
+        top: '5%',
+        right: '2%'
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: true,
+        data: categories,
+        axisLabel: {
+          fontSize: 12,
+          rotate: 0,
+          interval: 0,
+          overflow: 'break'
+        },
+        name: '年度',
+        nameLocation: 'middle',
+        nameGap: 50
+      },
+      yAxis: {
+        type: 'value',
+        name: '平均成績',
+        nameLocation: 'middle',
+        nameGap: 40,
+        min: 0,
+        max: 100,
+        axisLabel: {
+          formatter: '{value}分',
+          fontSize: 12
+        },
+        splitLine: {
+          lineStyle: {
+            type: 'dashed',
+            opacity: 0.3
+          }
+        }
+      },
+      series: series,
+      animationDuration: 1500,
+      animationEasing: 'cubicOut'
+    }
+    
+    console.log('高中類型最終圖表配置:', option)
+    console.log('高中類型最終系列數據:', series)
+    
+    schoolTypeSubjectChartInstance.setOption(option)
+  } catch (error) {
+    console.error('渲染高中類型科目成績分析圖表時出錯:', error)
+  }
+}
+
+// 地區科目成績分析
+const getRegionSubjectStats = async () => {
+  try {
+    console.log('地區科目成績分析請求')
+    console.log('regionSelectedSubjects.value:', regionSelectedSubjects.value)
+    console.log('regionSubjectYearCol.value:', regionSubjectYearCol.value)
+    console.log('regionSubjectRegionCol.value:', regionSubjectRegionCol.value)
+    
+    if (!regionSubjectYearCol.value || !regionSubjectRegionCol.value || !regionSelectedSubjects.value || regionSelectedSubjects.value.length === 0) {
+      ElMessage.error('請選擇年度欄位、地區欄位和科目')
+      return
+    }
+    
+    // 驗證地區分組設置
+    if (enableRegionGrouping.value) {
+      const validGroups = regionGroups.value.filter(group => 
+        group.name.trim() !== '' && group.regions.length > 0
+      )
+      if (validGroups.length === 0) {
+        ElMessage.error('啟用地區分組時，請至少設置一個有效的分組（包含名稱和地區）')
+        return
+      }
+    }
+    
+    const requestData = {
+      table_name: selectedTable.value,
+      year_col: regionSubjectYearCol.value,
+      region_col: regionSubjectRegionCol.value,
+      subjects: regionSelectedSubjects.value,
+      years: regionSelectedYears.value && regionSelectedYears.value.length > 0 ? regionSelectedYears.value : null,
+      enable_grouping: enableRegionGrouping.value,
+      region_groups: enableRegionGrouping.value ? 
+        regionGroups.value.filter(group => group.name.trim() !== '' && group.regions.length > 0) : null
+    }
+    
+    console.log('地區科目成績分析請求參數:', requestData)
+    
+    const data = await apiService.post(API_ENDPOINTS.REGION_SUBJECT_STATS, requestData)
+    
+    console.log('地區科目成績分析結果:', data)
+    console.log('返回的地區:', data.regions)
+    console.log('返回的科目:', data.subjects)
+    console.log('返回的年份:', data.years)
+    console.log('地區詳情:', data.region_details)
+    
+    regionSubjectStats.value = data
+    currentStats.value = data
+    
+    // 等待 DOM 更新
+    await nextTick()
+    
+    // 初始化圖表
+    const chartDom = document.getElementById('regionSubjectChart')
+    if (chartDom) {
+      if (regionSubjectChartInstance) {
+        regionSubjectChartInstance.dispose()
+        regionSubjectChartInstance = null
+      }
+      regionSubjectChartInstance = echarts.init(chartDom)
+      renderRegionSubjectChart()
+    }
+    
+  } catch (error) {
+    console.error('地區科目成績分析失敗:', error)
+    ElMessage.error('地區科目成績分析失敗')
+  }
+}
+
+// 地區科目成績分析圖表
+const renderRegionSubjectChart = () => {
+  if (!regionSubjectChartInstance || !regionSubjectStats.value) return
+  
+  try {
+    const data = regionSubjectStats.value
+    console.log('地區圖表渲染數據:', data)
+    
+    // 準備圖表數據 - 橫軸為年度，系列為地區
+    const categories = []
+    const series = []
+    
+    if (data.subjects && data.years && data.regions) {
+      // 過濾掉空的年份
+      const validYears = data.years.filter(year => year && year.trim() !== '')
+      
+      // 橫軸為年度
+      categories.push(...validYears)
+      
+      // 使用後端返回的地區列表（已經過分組處理）
+      const displayRegions = data.regions
+      
+      console.log('要顯示的地區:', displayRegions)
+      console.log('categories:', categories)
+      
+      // 為每個要顯示的地區創建一個系列
+      const colors = ['#4A90E2', '#E24A6B', '#67C23A', '#E6A23C', '#9013FE', '#FF5722', '#009688', '#795548', '#FF9800', '#8BC34A', '#2196F3', '#F44336']
+      
+      displayRegions.forEach((region, index) => {
+        const regionData = []
+        
+        // 為每個年度計算該地區所有科目的平均成績
+        validYears.forEach(year => {
+          const regionYearlyData = data.region_details[region] || []
+          const yearData = regionYearlyData.find(item => item.year === year)
+          
+          if (yearData && yearData.subjects) {
+            // 計算該年度該地區所有科目的平均值
+            const subjectScores = []
+            data.subjects.forEach(subject => {
+              if (yearData.subjects[subject] !== undefined && yearData.subjects[subject] !== null) {
+                subjectScores.push(yearData.subjects[subject])
+              }
+            })
+            
+            if (subjectScores.length > 0) {
+              const avgScore = subjectScores.reduce((sum, score) => sum + score, 0) / subjectScores.length
+              regionData.push(avgScore)
+            } else {
+              regionData.push(null)
+            }
+          } else {
+            regionData.push(null)
+          }
+        })
+        
+        // 檢查是否有有效數據
+        const hasValidData = regionData.some(value => value !== null && value !== undefined)
+        console.log(`地區 ${region} 的數據:`, regionData, '有效數據:', hasValidData)
+        
+        if (hasValidData) {
+          const seriesConfig = {
+            name: region,
+            type: 'bar',
+            data: regionData,
+            itemStyle: {
+              color: colors[index % colors.length],
+              borderRadius: [2, 2, 0, 0]
+            },
+            emphasis: {
+              itemStyle: {
+                shadowBlur: 10,
+                shadowColor: 'rgba(0, 0, 0, 0.2)'
+              }
+            },
+            label: {
+              show: false
+            }
+          }
+          
+          series.push(seriesConfig)
+        }
+      })
+    }
+    
+    const option = {
+      title: {
+        text: '地區科目成績差異分析',
+        left: 'center',
+        textStyle: {
+          fontSize: 18,
+          fontWeight: 'bold'
+        }
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'shadow'
+        },
+        formatter: (params) => {
+          const year = params[0].axisValue
+          let result = `<strong>${year}年度平均成績</strong><br/>`
           params.forEach(param => {
             if (param.value !== null) {
               result += `${param.seriesName}: <strong>${param.value.toFixed(1)}分</strong><br/>`
@@ -4709,12 +5820,12 @@ const renderAdmissionSubjectChart = () => {
       animationEasing: 'cubicOut'
     }
     
-    console.log('最終圖表配置:', option)
-    console.log('最終系列數據:', series)
+    console.log('地區最終圖表配置:', option)
+    console.log('地區最終系列數據:', series)
     
-    admissionSubjectChartInstance.setOption(option)
+    regionSubjectChartInstance.setOption(option)
   } catch (error) {
-    console.error('渲染入學管道科目成績分析圖表時出錯:', error)
+    console.error('渲染地區科目成績分析圖表時出錯:', error)
   }
 }
 

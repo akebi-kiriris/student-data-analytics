@@ -2530,8 +2530,8 @@ def admission_subject_analysis():
         # 使用入學管道分類函數對資料進行分類
         df['classified_admission'] = df[safe_admission_col].apply(classify_admission_method)
         
-        # 獲取所有可用的年份
-        all_years = sorted(df[safe_year_col].unique().tolist())
+        # 獲取所有可用的年份，過濾空值和空字串
+        all_years = sorted([year for year in df[safe_year_col].unique().tolist() if str(year).strip() != ''])
         
         # 獲取所有入學管道類別
         all_admission_methods = sorted(df['classified_admission'].unique().tolist())
@@ -2624,6 +2624,395 @@ def admission_subject_analysis():
         
     except Exception as e:
         print(f"[admission_subject_analysis] Error: {str(e)}")
+        return jsonify({'error': f'分析過程發生錯誤: {str(e)}'}), 500
+    
+    finally:
+        if 'session' in locals():
+            session.close()
+
+
+@app.route('/api/analysis/school-type-subject', methods=['POST'])
+@jwt_required()
+def school_type_subject_analysis():
+    """
+    高中類型科目成績分析 API
+    支援多科目選擇，分析不同高中類型學生在各科目間的成績差異
+    """
+    try:
+        data = request.get_json()
+        table_name = data.get('table_name')
+        year_col = data.get('year_col')
+        school_type_col = data.get('school_type_col')
+        subject_cols = data.get('subjects', [])
+        years_filter = data.get('years', [])
+        enable_grouping = data.get('enable_grouping', False)
+        school_type_groups = data.get('school_type_groups', [])
+        
+        print(f"[school_type_subject_analysis] 開始分析，表格: {table_name}")
+        print(f"[school_type_subject_analysis] 年度欄位: {year_col}, 高中類型欄位: {school_type_col}")
+        print(f"[school_type_subject_analysis] 科目欄位: {subject_cols}")
+        print(f"[school_type_subject_analysis] 年份篩選: {years_filter}")
+        print(f"[school_type_subject_analysis] 啟用分組: {enable_grouping}")
+        print(f"[school_type_subject_analysis] 高中類型分組: {school_type_groups}")
+        
+        if not all([table_name, year_col, school_type_col, subject_cols]):
+            return jsonify({'error': '缺少必要參數'}), 400
+        
+        if not isinstance(subject_cols, list) or len(subject_cols) == 0:
+            return jsonify({'error': '請至少選擇一個科目'}), 400
+        
+        # 建立資料庫連接
+        engine = create_engine('sqlite:///database/excel_data.db')
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        
+        # 檢查表格是否存在
+        inspector = inspect(engine)
+        if table_name not in inspector.get_table_names():
+            return jsonify({'error': f'表格 {table_name} 不存在'}), 404
+        
+        # 獲取表格欄位資訊
+        columns_info = inspector.get_columns(table_name)
+        available_columns = [col['name'] for col in columns_info]
+        
+        print(f"[school_type_subject_analysis] 可用欄位: {available_columns}")
+        
+        # 安全化欄位名稱
+        safe_year_col = year_col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
+        safe_school_type_col = school_type_col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
+        safe_subject_cols = []
+        
+        for col in subject_cols:
+            safe_col = col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
+            if safe_col in available_columns:
+                safe_subject_cols.append({'original': col, 'safe': safe_col})
+            else:
+                print(f"[school_type_subject_analysis] 警告：科目欄位 '{col}' 不存在")
+        
+        if not safe_subject_cols:
+            return jsonify({'error': '沒有找到有效的科目欄位'}), 400
+        
+        # 檢查必要欄位是否存在
+        if safe_year_col not in available_columns:
+            return jsonify({'error': f'年度欄位 {year_col} 不存在'}), 400
+        if safe_school_type_col not in available_columns:
+            return jsonify({'error': f'高中類型欄位 {school_type_col} 不存在'}), 400
+        
+        # 建構 SQL 查詢 - 包含年度、高中類型和所有科目欄位
+        select_cols = [f'"{safe_year_col}"', f'"{safe_school_type_col}"']
+        select_cols.extend([f'"{subject["safe"]}"' for subject in safe_subject_cols])
+        
+        # 建構 WHERE 條件
+        where_conditions = [
+            f'"{safe_year_col}" IS NOT NULL',
+            f'"{safe_year_col}" != ""',
+            f'"{safe_school_type_col}" IS NOT NULL',
+            f'"{safe_school_type_col}" != ""'
+        ]
+        
+        # 如果有年份篩選，添加年份條件
+        if years_filter and len(years_filter) > 0:
+            years_str = ', '.join([str(year) for year in years_filter])
+            where_conditions.append(f'"{safe_year_col}" IN ({years_str})')
+        
+        query = text(f'''
+            SELECT {", ".join(select_cols)}
+            FROM "{table_name}" 
+            WHERE {" AND ".join(where_conditions)}
+        ''')
+        
+        print(f"[school_type_subject_analysis] 執行查詢: {query}")
+        result = session.execute(query)
+        
+        # 讀取資料並轉換為 DataFrame
+        df = pd.DataFrame(result.fetchall(), columns=[safe_year_col, safe_school_type_col] + [subject["safe"] for subject in safe_subject_cols])
+        
+        if df.empty:
+            return jsonify({'error': '查詢結果為空，請檢查篩選條件'}), 404
+        
+        print(f"[school_type_subject_analysis] 讀取到 {len(df)} 筆資料")
+        
+        # 使用高中類型分類函數對資料進行分類
+        df['classified_school_type'] = df[safe_school_type_col].apply(classify_school_type)
+        
+        # 獲取所有可用的年份，過濾空值和空字串
+        all_years = sorted([year for year in df[safe_year_col].unique().tolist() if str(year).strip() != ''])
+        
+        # 獲取所有高中類型類別
+        all_school_types = sorted(df['classified_school_type'].unique().tolist())
+        
+        # 處理高中類型過濾 - 如果啟用了分組，只包含分組中指定的高中類型
+        final_school_types = all_school_types
+        if enable_grouping and school_type_groups:
+            grouped_types = set()
+            for group in school_type_groups:
+                group_types = group.get('types', [])
+                if group_types:
+                    grouped_types.update(group_types)
+            # 只保留在分組中指定的高中類型
+            final_school_types = [school_type for school_type in all_school_types if school_type in grouped_types]
+        
+        print(f"[school_type_subject_analysis] 最終高中類型: {final_school_types}")
+        
+        # 處理科目（這裡不需要分組，直接使用選中的科目）
+        final_subjects = []
+        for subject in safe_subject_cols:
+            final_subjects.append({
+                'name': subject['original'],
+                'type': 'single',
+                'subjects': [subject['original']]
+            })
+        
+        # 準備分析結果
+        analysis_results = {
+            'years': all_years,
+            'school_types': final_school_types,  # 使用過濾後的高中類型
+            'subjects': [subject['name'] for subject in final_subjects],
+            'type_details': {}
+        }
+        
+        # 對每個最終高中類型進行分析
+        for school_type in final_school_types:
+            type_data = df[df['classified_school_type'] == school_type].copy()
+            yearly_data = []
+            
+            for year in all_years:
+                year_data = type_data[type_data[safe_year_col] == year]
+                
+                if not year_data.empty:
+                    year_result = {'year': year, 'subjects': {}}
+                    
+                    for subject_info in final_subjects:
+                        subject_name = subject_info['name']
+                        subject_type = subject_info['type']
+                        subject_cols_list = subject_info['subjects']
+                        
+                        if subject_type == 'group':
+                            # 科目分組：計算多個科目的平均分
+                            valid_scores = []
+                            for subject_col in subject_cols_list:
+                                # 找到對應的安全欄位名稱
+                                safe_col = None
+                                for safe_subject in safe_subject_cols:
+                                    if safe_subject['original'] == subject_col:
+                                        safe_col = safe_subject['safe']
+                                        break
+                                
+                                if safe_col and safe_col in year_data.columns:
+                                    scores = pd.to_numeric(year_data[safe_col], errors='coerce').dropna()
+                                    valid_scores.extend(scores.tolist())
+                            
+                            if valid_scores:
+                                group_avg = round(sum(valid_scores) / len(valid_scores), 2)
+                                year_result['subjects'][subject_name] = group_avg
+                        else:
+                            # 單一科目：直接計算該科目的平均分
+                            subject_col = subject_cols_list[0]
+                            safe_col = None
+                            for safe_subject in safe_subject_cols:
+                                if safe_subject['original'] == subject_col:
+                                    safe_col = safe_subject['safe']
+                                    break
+                            
+                            if safe_col and safe_col in year_data.columns:
+                                scores = pd.to_numeric(year_data[safe_col], errors='coerce').dropna()
+                                if len(scores) > 0:
+                                    subject_avg = round(scores.mean(), 2)
+                                    year_result['subjects'][subject_name] = subject_avg
+                    
+                    yearly_data.append(year_result)
+            
+            analysis_results['type_details'][school_type] = yearly_data
+        
+        print(f"[school_type_subject_analysis] 分析完成，涵蓋 {len(final_subjects)} 科目，{len(final_school_types)} 個高中類型")
+        return jsonify(analysis_results)
+        
+    except Exception as e:
+        print(f"[school_type_subject_analysis] Error: {str(e)}")
+        return jsonify({'error': f'分析過程發生錯誤: {str(e)}'}), 500
+    
+    finally:
+        if 'session' in locals():
+            session.close()
+
+
+@app.route('/api/analysis/region-subject', methods=['POST'])
+def region_subject_analysis():
+    """地區科目成績分析API"""
+    session = None
+    try:
+        data = request.get_json()
+        table_name = data.get('table_name')
+        year_col = data.get('year_col')
+        region_col = data.get('region_col')
+        subject_cols = data.get('subjects', [])
+        years_filter = data.get('years', [])
+        enable_grouping = data.get('enable_grouping', False)
+        region_groups = data.get('region_groups', [])
+        
+        print(f"[region_subject_analysis] 開始分析，表格: {table_name}")
+        print(f"[region_subject_analysis] 年度欄位: {year_col}, 地區欄位: {region_col}")
+        print(f"[region_subject_analysis] 科目欄位: {subject_cols}")
+        print(f"[region_subject_analysis] 年份篩選: {years_filter}")
+        print(f"[region_subject_analysis] 啟用分組: {enable_grouping}")
+        print(f"[region_subject_analysis] 地區分組: {region_groups}")
+        
+        if not all([table_name, year_col, region_col]):
+            return jsonify({'error': '缺少必要參數：table_name, year_col, region_col'}), 400
+            
+        if not subject_cols:
+            return jsonify({'error': '必須至少選擇一個科目欄位'}), 400
+        
+        # 建立資料庫連接
+        engine = create_engine('sqlite:///database/excel_data.db')
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        
+        # 檢查表格是否存在
+        inspector = inspect(engine)
+        if table_name not in inspector.get_table_names():
+            return jsonify({'error': f'表格 {table_name} 不存在'}), 400
+        
+        # 檢查欄位是否存在
+        metadata = MetaData()
+        table = Table(table_name, metadata, autoload_with=engine)
+        available_columns = [col.name for col in table.columns]
+        
+        print(f"[region_subject_analysis] 可用欄位: {available_columns}")
+        
+        # 檢查年度和地區欄位
+        if year_col not in available_columns:
+            return jsonify({'error': f'年度欄位 {year_col} 不存在'}), 400
+        if region_col not in available_columns:
+            return jsonify({'error': f'地區欄位 {region_col} 不存在'}), 400
+            
+        # 檢查科目欄位
+        valid_subject_cols = []
+        for col in subject_cols:
+            if col in available_columns:
+                valid_subject_cols.append(col)
+            else:
+                print(f"[region_subject_analysis] 警告：科目欄位 '{col}' 不存在")
+        
+        if not valid_subject_cols:
+            return jsonify({'error': '所有科目欄位都不存在'}), 400
+        
+        # 構建查詢
+        select_columns = [year_col, region_col] + valid_subject_cols
+        columns_str = ', '.join([f'"{col}"' for col in select_columns])
+        
+        # 基本查詢
+        query = f'''
+        SELECT {columns_str}
+        FROM "{table_name}"
+        WHERE "{year_col}" IS NOT NULL 
+        AND "{region_col}" IS NOT NULL
+        '''
+        
+        # 添加年份篩選條件
+        if years_filter and len(years_filter) > 0:
+            years_str = ', '.join([f"'{year}'" for year in years_filter])
+            query += f' AND "{year_col}" IN ({years_str})'
+        
+        # 添加科目欄位非空條件
+        subject_conditions = []
+        for col in valid_subject_cols:
+            subject_conditions.append(f'"{col}" IS NOT NULL')
+        if subject_conditions:
+            query += ' AND (' + ' OR '.join(subject_conditions) + ')'
+        
+        print(f"[region_subject_analysis] 執行查詢: {query}")
+        
+        # 執行查詢
+        with engine.connect() as conn:
+            result = conn.execute(text(query))
+            df = pd.DataFrame(result.fetchall(), columns=result.keys())
+        
+        print(f"[region_subject_analysis] 讀取到 {len(df)} 筆資料")
+        
+        if df.empty:
+            return jsonify({'error': '沒有找到符合條件的資料'}), 400
+        
+        # 獲取可用的年份和地區，過濾空值和空字串
+        available_years = sorted([year for year in df[year_col].dropna().unique().tolist() if str(year).strip() != ''])
+        available_regions = sorted([region for region in df[region_col].dropna().unique().tolist() if str(region).strip() != ''])
+        
+        # 處理地區過濾 - 如果啟用了分組，只包含分組中指定的地區
+        final_regions = available_regions
+        if enable_grouping and region_groups:
+            grouped_regions = set()
+            for group in region_groups:
+                group_regions = group.get('regions', [])
+                if group_regions:
+                    grouped_regions.update(group_regions)
+            # 只保留在分組中指定的地區
+            final_regions = [region for region in available_regions if region in grouped_regions]
+        
+        print(f"[region_subject_analysis] 最終地區: {final_regions}")
+        
+        # 分析結果
+        result_data = {
+            'years': available_years,
+            'subjects': valid_subject_cols,
+            'regions': final_regions,
+            'enable_grouping': enable_grouping,
+            'region_details': {}
+        }
+        
+        # 對每個最終地區進行分析
+        for region in final_regions:
+            region_data = df[df[region_col] == region].copy()
+            yearly_data = []
+            
+            for year in available_years:
+                year_data_filtered = region_data[region_data[year_col] == year]
+                
+                if not year_data_filtered.empty:
+                    year_result = {'year': year, 'subjects': {}}
+                    
+                    for subject in valid_subject_cols:
+                        if subject in year_data_filtered.columns:
+                            subject_values = pd.to_numeric(year_data_filtered[subject], errors='coerce').dropna()
+                            if len(subject_values) > 0:
+                                avg_score = round(subject_values.mean(), 1)
+                                year_result['subjects'][subject] = avg_score
+                            else:
+                                year_result['subjects'][subject] = None
+                        else:
+                            year_result['subjects'][subject] = None
+                    
+                    yearly_data.append(year_result)
+                else:
+                    # 如果該年度沒有數據，仍要添加空記錄
+                    year_result = {'year': year, 'subjects': {}}
+                    for subject in valid_subject_cols:
+                        year_result['subjects'][subject] = None
+                    yearly_data.append(year_result)
+            
+            result_data['region_details'][region] = yearly_data
+        
+        # 篩選出實際有數據的科目
+        final_subjects = []
+        for subject in valid_subject_cols:
+            has_data = False
+            for region_detail in result_data['region_details'].values():
+                for year_data in region_detail:
+                    if year_data['subjects'].get(subject) is not None:
+                        has_data = True
+                        break
+                if has_data:
+                    break
+            if has_data:
+                final_subjects.append(subject)
+        
+        result_data['subjects'] = final_subjects
+        
+        print(f"[region_subject_analysis] 分析完成，涵蓋 {len(final_subjects)} 科目，{len(final_regions)} 個地區")
+        
+        return jsonify(result_data)
+    
+    except Exception as e:
+        print(f"[region_subject_analysis] Error: {str(e)}")
         return jsonify({'error': f'分析過程發生錯誤: {str(e)}'}), 500
     
     finally:

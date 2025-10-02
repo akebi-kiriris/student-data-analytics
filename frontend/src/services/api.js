@@ -196,5 +196,11 @@ export const API_ENDPOINTS = {
   GENDER_SUBJECT_STATS: '/analysis/gender-subject',
   
   // 入學管道科目成績分析
-  ADMISSION_SUBJECT_STATS: '/analysis/admission-subject'
+  ADMISSION_SUBJECT_STATS: '/analysis/admission-subject',
+  
+  // 高中類型科目成績分析
+  SCHOOL_TYPE_SUBJECT_STATS: '/analysis/school-type-subject',
+  
+  // 地區科目成績分析
+  REGION_SUBJECT_STATS: '/analysis/region-subject'
 }
