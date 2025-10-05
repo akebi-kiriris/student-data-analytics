@@ -9,7 +9,7 @@ cd /d "%~dp0"
 echo ========================================
 echo Starting Backend Server (Flask)
 echo ========================================
-start "Backend Server" cmd /k "cd backend && python app.py"
+start "Backend Server" cmd /k "cd backend && venv\Scripts\activate && python app.py"
 
 echo Waiting for backend server to start...
 timeout /t 3 /nobreak > nul
