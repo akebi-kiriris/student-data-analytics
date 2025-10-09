@@ -43,3 +43,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+
+# 私人學習筆記 (不應上傳到 Git)
+專案架構說明.md
