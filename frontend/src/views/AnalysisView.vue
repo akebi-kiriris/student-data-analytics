@@ -1179,7 +1179,7 @@
           <div style="display: flex; align-items: center; gap: 8px;">
             <el-switch v-model="enableRegionGrouping" />
             <label>啟用地區分組</label>
-            <el-tooltip content="啟用後可將多個地區合併分析，例如將「臺北市」和「新北市」合併為「北部地區」進行比較" placement="top">
+            <el-tooltip content="啟用後可將多個地區合併分析，例如將「台北市」和「新北市」合併為「北部地區」進行比較" placement="top">
               <el-icon><InfoFilled /></el-icon>
             </el-tooltip>
           </div>
@@ -1198,11 +1198,11 @@
                   placeholder="選擇分組地區" 
                   style="width: 400px"
                 >
-                  <el-option value="臺北市" label="臺北市" />
+                  <el-option value="台北市" label="台北市" />
                   <el-option value="新北市" label="新北市" />
                   <el-option value="桃園市" label="桃園市" />
-                  <el-option value="臺中市" label="臺中市" />
-                  <el-option value="臺南市" label="臺南市" />
+                  <el-option value="台中市" label="台中市" />
+                  <el-option value="台南市" label="台南市" />
                   <el-option value="高雄市" label="高雄市" />
                   <el-option value="基隆市" label="基隆市" />
                   <el-option value="新竹市" label="新竹市" />
@@ -1216,7 +1216,7 @@
                   <el-option value="屏東縣" label="屏東縣" />
                   <el-option value="宜蘭縣" label="宜蘭縣" />
                   <el-option value="花蓮縣" label="花蓮縣" />
-                  <el-option value="臺東縣" label="臺東縣" />
+                  <el-option value="台東縣" label="台東縣" />
                   <el-option value="澎湖縣" label="澎湖縣" />
                   <el-option value="金門縣" label="金門縣" />
                   <el-option value="連江縣" label="連江縣" />

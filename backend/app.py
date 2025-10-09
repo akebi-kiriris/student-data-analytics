@@ -167,12 +167,14 @@ def classify_region(region):
     region = str(region).strip()
     if region == '':
         return '其他'
+    
+    # 統一將「臺」轉換為「台」，避免兩種寫法造成的匹配問題
+    region = region.replace('臺', '台')
 
     # 地理區域對應表
     region_mapping = {
         # 北台灣
         '台北市': '北台灣',
-        '臺北市': '北台灣',
         '新北市': '北台灣',
         '基隆市': '北台灣',
         '宜蘭縣': '北台灣',
@@ -183,7 +185,6 @@ def classify_region(region):
         # 中台灣
         '苗栗縣': '中台灣',
         '台中市': '中台灣',
-        '臺中市': '中台灣',
         '彰化縣': '中台灣',
         '南投縣': '中台灣',
         '雲林縣': '中台灣',
@@ -192,14 +193,12 @@ def classify_region(region):
         '嘉義市': '南台灣',
         '嘉義縣': '南台灣',
         '台南市': '南台灣',
-        '臺南市': '南台灣',
         '高雄市': '南台灣',
         '屏東縣': '南台灣',
         
         # 東台灣
         '花蓮縣': '東台灣',
-        '台東縣': '東台灣',
-        '臺東縣': '東台灣'
+        '台東縣': '東台灣'
     }
 
     return region_mapping.get(region, '其他')
@@ -1585,11 +1584,11 @@ def admission_method_stats():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# 地理區域分類規則
+# 地理區域分類規則（已棄用，改用 classify_region 函數）
+# 保留此變數以防有舊代碼引用
 REGION_MAPPING = {
     # 北台灣
     '台北市': '北台灣',
-    '臺北市': '北台灣',
     '新北市': '北台灣',
     '基隆市': '北台灣',
     '宜蘭縣': '北台灣',
@@ -1600,7 +1599,6 @@ REGION_MAPPING = {
     # 中台灣
     '苗栗縣': '中台灣',
     '台中市': '中台灣',
-    '臺中市': '中台灣',
     '彰化縣': '中台灣',
     '南投縣': '中台灣',
     '雲林縣': '中台灣',
@@ -1609,14 +1607,12 @@ REGION_MAPPING = {
     '嘉義市': '南台灣',
     '嘉義縣': '南台灣',
     '台南市': '南台灣',
-    '臺南市': '南台灣',
     '高雄市': '南台灣',
     '屏東縣': '南台灣',
     
     # 東台灣
     '花蓮縣': '東台灣',
     '台東縣': '東台灣',
-    '臺東縣': '東台灣',
 }
 
 # 區域排序（用於確保圖表順序一致）
@@ -1706,12 +1702,12 @@ def geographic_stats():
             if get_city_details:
                 detailed = {}
                 
-                # 定義每個區域應該包含的所有縣市
+                # 定義每個區域應該包含的所有縣市（統一使用「台」，因為資料已在 classify_region 中轉換）
                 region_cities_mapping = {
-                    '北台灣': ['台北市', '臺北市', '新北市', '基隆市', '桃園市', '新竹市', '新竹縣', '宜蘭縣'],
-                    '中台灣': ['苗栗縣', '台中市', '臺中市', '彰化縣', '南投縣', '雲林縣'],
-                    '南台灣': ['嘉義市', '嘉義縣', '台南市', '臺南市', '高雄市', '屏東縣'],
-                    '東台灣': ['花蓮縣', '台東縣', '臺東縣']
+                    '北台灣': ['台北市', '新北市', '基隆市', '桃園市', '新竹市', '新竹縣', '宜蘭縣'],
+                    '中台灣': ['苗栗縣', '台中市', '彰化縣', '南投縣', '雲林縣'],
+                    '南台灣': ['嘉義市', '嘉義縣', '台南市', '高雄市', '屏東縣'],
+                    '東台灣': ['花蓮縣', '台東縣']
                 }
                 
                 # 針對四個主要區域進行詳細縣市分析
@@ -1720,8 +1716,12 @@ def geographic_stats():
                     
                     city_data = []
                     for city in expected_cities:
+                        # 先將資料庫中的縣市名稱標準化（統一轉成「台」）
+                        df_normalized = df.copy()
+                        df_normalized[safe_region_col] = df_normalized[safe_region_col].apply(lambda x: str(x).replace('臺', '台') if pd.notna(x) else x)
+                        
                         # 按年度和縣市統計
-                        city_df = df[df[safe_region_col] == city]
+                        city_df = df_normalized[df_normalized[safe_region_col] == city]
                         city_by_year = city_df.groupby(safe_year_col).size() if not city_df.empty else pd.Series()
                         
                         # 確保所有年份都有數據
@@ -1732,34 +1732,18 @@ def geographic_stats():
                             else:
                                 year_data.append(0)
                         
-                        city_data.append({
-                            'name': city,
-                            'data': year_data
-                        })
-                    
-                    # 只保留有意義的縣市名稱（去除重複的簡繁體）
-                    unique_city_data = []
-                    city_names_seen = set()
-                    for city_info in city_data:
-                        city_name = city_info['name']
-                        base_name = city_name.replace('臺', '台')
-                        if base_name not in city_names_seen:
-                            city_names_seen.add(base_name)
-                            city_info['name'] = base_name
-                            unique_city_data.append(city_info)
-                        else:
-                            # 合併數據
-                            for existing_city in unique_city_data:
-                                if existing_city['name'] == base_name:
-                                    for i in range(len(existing_city['data'])):
-                                        existing_city['data'][i] = max(existing_city['data'][i], city_info['data'][i])
-                                    break
+                        # 只有當該城市有資料時才加入
+                        if sum(year_data) > 0:
+                            city_data.append({
+                                'name': city,
+                                'data': year_data
+                            })
                     
                     # 按總人數排序縣市
-                    unique_city_data.sort(key=lambda x: sum(x['data']), reverse=True)
+                    city_data.sort(key=lambda x: sum(x['data']), reverse=True)
                     
                     detailed[region] = {
-                        'cities': unique_city_data
+                        'cities': city_data
                     }
                 
                 result['detailed'] = detailed
@@ -2932,6 +2916,9 @@ def region_subject_analysis():
         
         if df.empty:
             return jsonify({'error': '沒有找到符合條件的資料'}), 400
+        
+        # 標準化地區名稱：將所有「臺」轉換為「台」
+        df[region_col] = df[region_col].apply(lambda x: str(x).replace('臺', '台') if pd.notna(x) else x)
         
         # 獲取可用的年份和地區，過濾空值和空字串
         available_years = sorted([year for year in df[year_col].dropna().unique().tolist() if str(year).strip() != ''])
