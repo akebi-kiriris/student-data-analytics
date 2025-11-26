@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Local development files
+開環境.txt
+本地與雲端環境說明.md
+環境自動切換範例.py
+cloud-compatibility-example.py
+
+# Testing files
+test_*.py
+check_*.py
+
+# Large data files (will be uploaded dynamically)
+uploads/*.xlsx
+uploads/*.xls
+database/*.db
+
+# Documentation
+*.md

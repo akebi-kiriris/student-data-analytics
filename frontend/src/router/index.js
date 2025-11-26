@@ -4,7 +4,8 @@ import RegisterView from '../views/RegisterView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import DataManagementView from '../views/DataManagementView.vue'
 import AnalysisView from '../views/AnalysisView.vue'
-import { authService } from '../services/auth.js'
+// 延遲導入 authService 避免循環依賴
+// import { authService } from '../services/auth.js'
 // 暫時隱藏用戶管理頁面導入
 // import UserManagementView from '../views/UserManagementView.vue'
 
@@ -81,7 +82,10 @@ const router = createRouter({
 })
 
 // 路由守衛
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
+  // 動態導入 authService 避免循環依賴
+  const { authService } = await import('../services/auth.js')
+  
   // 設置頁面標題
   if (to.meta.title) {
     document.title = to.meta.title

@@ -1010,11 +1010,25 @@
 // 用於儲存所有需要清理的函數
 const cleanupFunctions = []
 
+const getApiBaseUrl = () => {
+  try {
+    const hostname = window.location.hostname
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1'
+    return isLocalhost
+      ? 'http://localhost:5000/api'
+      : 'https://student-analytics-backend-470050740360.asia-east1.run.app/api'
+  } catch (error) {
+    return 'https://student-analytics-backend-470050740360.asia-east1.run.app/api'
+  }
+}
+
+const API_BASE_URL = getApiBaseUrl()
+
 // 功能開關
 const showUserManagement = ref(false) // 暫時隱藏用戶管理功能
 
 const stats = ref(null)
-const uploadUrl = 'http://localhost:5000/api/upload'
+const uploadUrl = `${API_BASE_URL}/upload`
 const fileList = ref([])
 const selectedFile = ref(null)
 const sheetList = ref([])
@@ -1044,6 +1058,8 @@ import { ref, onMounted, onUpdated, onBeforeUnmount, nextTick, watch } from 'vue
 import axios from 'axios'
 import Chart from 'chart.js/auto'
 import * as echarts from 'echarts'
+
+// 直接使用內聯配置
 let chartInstance = null
 let multiChartInstance = null
 let yearlyAdmissionChartInstance = null
@@ -1803,7 +1819,7 @@ const setActiveBlock = (blockName) => {
 const getSchoolSourceStats = async () => {
   if (!selectedFile.value || !selectedSheet.value || !schoolSourceYearCol.value || !schoolNameCol.value) return
   try {
-    const res = await axios.post('http://localhost:5000/api/school_source_stats', {
+    const res = await axios.post(`${API_BASE_URL}/school_source_stats`, {
       filename: selectedFile.value,
       sheet: selectedSheet.value,
       year_col: schoolSourceYearCol.value,
@@ -1822,7 +1838,7 @@ const getSchoolSourceStats = async () => {
 const getAdmissionMethodStats = async () => {
   if (!selectedFile.value || !selectedSheet.value || !admissionMethodYearCol.value || !admissionMethodCol.value) return
   try {
-    const res = await axios.post('http://localhost:5000/api/admission_method_stats', {
+    const res = await axios.post(`${API_BASE_URL}/admission_method_stats`, {
       filename: selectedFile.value,
       sheet: selectedSheet.value,
       year_col: admissionMethodYearCol.value,
@@ -1841,7 +1857,7 @@ const getAdmissionMethodStats = async () => {
 const getYearlyAdmissionStats = async () => {
   if (!selectedFile.value || !selectedSheet.value || !admissionYearCol.value) return
   try {
-    const res = await axios.post('http://localhost:5000/api/yearly_admission_stats', {
+    const res = await axios.post(`${API_BASE_URL}/yearly_admission_stats`, {
       filename: selectedFile.value,
       sheet: selectedSheet.value,
       year_col: admissionYearCol.value,
@@ -1859,7 +1875,7 @@ const getYearlyAdmissionStats = async () => {
 // 地理區域分析
 const getGeographicStats = async () => {
   try {
-    const response = await axios.post('http://localhost:5000/api/geographic_stats', {
+    const response = await axios.post(`${API_BASE_URL}/geographic_stats`, {
       filename: selectedFile.value,
       sheet: selectedSheet.value,
       year_col: geoYearCol.value,
@@ -1979,7 +1995,7 @@ const renderGeoChart = () => {
 const showRawData = async () => {
   if (!selectedFile.value || !selectedSheet.value || !selectedColumn.value) return
   try {
-    const res = await axios.get(`http://localhost:5000/api/data/${encodeURIComponent(selectedFile.value)}?sheet=${encodeURIComponent(selectedSheet.value)}`)
+    const res = await axios.get(`${API_BASE_URL}/data/${encodeURIComponent(selectedFile.value)}?sheet=${encodeURIComponent(selectedSheet.value)}`)
     if (res.data && res.data.data) {
       if (!res.data.columns.includes(selectedColumn.value)) {
         rawData.value = []
@@ -2046,7 +2062,7 @@ const loadFileSheets = async () => {
   stats.value = null
   rawData.value = []
   try {
-    const res = await axios.post('http://localhost:5000/api/sheets', {
+    const res = await axios.post(`${API_BASE_URL}/sheets`, {
       filename: selectedFile.value
     })
     sheetList.value = res.data.sheets || []
@@ -2065,7 +2081,7 @@ const loadFileColumns = async () => {
   stats.value = null
   rawData.value = []
   try {
-    const res = await axios.post('http://localhost:5000/api/read_columns', {
+    const res = await axios.post(`${API_BASE_URL}/read_columns`, {
       filename: selectedFile.value,
       sheet: selectedSheet.value
     })
@@ -2139,7 +2155,7 @@ const loadFileColumns = async () => {
 const getColumnStats = async () => {
   if (!selectedFile.value || !selectedSheet.value || !selectedColumn.value) return
   try {
-    const res = await axios.post('http://localhost:5000/api/column_stats', {
+    const res = await axios.post(`${API_BASE_URL}/column_stats`, {
       filename: selectedFile.value,
       sheet: selectedSheet.value,
       column: selectedColumn.value
@@ -2163,7 +2179,7 @@ const getColumnStats = async () => {
 const getMultiSubjectStats = async () => {
   if (!selectedFile.value || !selectedSheet.value || !selectedSubjects.value.length) return
   try {
-    const res = await axios.post('http://localhost:5000/api/multi_subject_stats', {
+    const res = await axios.post(`${API_BASE_URL}/multi_subject_stats`, {
       filename: selectedFile.value,
       sheet: selectedSheet.value,
       subjects: selectedSubjects.value,

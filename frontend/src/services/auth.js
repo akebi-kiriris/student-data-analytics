@@ -1,5 +1,5 @@
 // JWT認證服務
-const API_BASE_URL = 'http://localhost:5000/api'
+import { API_BASE_URL } from './api-config.js'
 
 export const authService = {
   // 登入
