@@ -90,7 +90,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { authService } from '../services/auth.js'
-import { apiService, API_ENDPOINTS } from '../services/api.js'
+import { simpleApiService, SIMPLE_API_ENDPOINTS } from '../services/api-simple.js'
 
 const router = useRouter()
 
@@ -114,7 +114,7 @@ let timeInterval = null
 const loadStats = async () => {
   try {
     // 獲取資料庫表格數量
-    const tablesResponse = await apiService.get(API_ENDPOINTS.DATABASE.NEW_TABLES)
+    const tablesResponse = await simpleApiService.get(SIMPLE_API_ENDPOINTS.DATABASE_TABLES)
     
     if (tablesResponse.success) {
       stats.value.totalFiles = tablesResponse.tables.length.toString()
@@ -123,7 +123,7 @@ const loadStats = async () => {
       let totalRows = 0
       for (const table of tablesResponse.tables) {
         try {
-          const countResponse = await apiService.get(`${API_ENDPOINTS.DATABASE.TABLE_COUNT}/${table.table_name}/count`)
+          const countResponse = await simpleApiService.get(`${SIMPLE_API_ENDPOINTS.TABLE_COUNT}/${table.table_name}/count`)
           if (countResponse.success) {
             totalRows += countResponse.count
           }

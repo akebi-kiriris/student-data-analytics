@@ -205,7 +205,16 @@ def classify_region(region):
 
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True, allow_headers=['Content-Type', 'Authorization'])  # 允許 Authorization header
+CORS(app, 
+     supports_credentials=True, 
+     allow_headers=['Content-Type', 'Authorization'],
+     origins=[
+         'https://student-analytics-prod.web.app',
+         'https://student-analytics-prod.firebaseapp.com',
+         'http://localhost:5173',  # Vite 開發伺服器
+         'http://localhost:3000',  # 其他可能的開發環境
+         'http://127.0.0.1:5173'   # 本地測試
+     ])  # 明確允許的來源
 
 # JWT 配置
 app.config['JWT_SECRET_KEY'] = 'your-secret-key-here-change-in-production'  # 使用固定密鑰
@@ -237,6 +246,10 @@ def create_excel_table(table_name, columns):
     """
     inspector = inspect(engine)
     
+    # 清理 SQLAlchemy metadata 快取
+    if table_name in metadata.tables:
+        metadata.remove(metadata.tables[table_name])
+    
     # 若表格已存在則先刪除
     if inspector.has_table(table_name):
         with engine.connect() as conn:
@@ -250,7 +263,8 @@ def create_excel_table(table_name, columns):
         safe_col_name = col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
         cols.append(Column(safe_col_name, String))
     
-    table = Table(table_name, metadata, *cols)
+    # 使用 extend_existing=True 避免重複定義錯誤
+    table = Table(table_name, metadata, *cols, extend_existing=True)
     metadata.create_all(engine)
     return table
 
@@ -3008,4 +3022,7 @@ def region_subject_analysis():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # 支援 Cloud Run 環境變數
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_ENV', 'development') == 'development'
+    app.run(host='0.0.0.0', port=port, debug=debug)

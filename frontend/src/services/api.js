@@ -1,12 +1,14 @@
 // API服務 - 統一處理HTTP請求
 import { authService } from './auth.js'
+import { API_BASE_URL, getEnvironmentInfo } from './api-config.js'
 
-const API_BASE_URL = 'http://localhost:5000/api'
+const environmentInfo = getEnvironmentInfo()
 
 // 創建一個通用的fetch包裝器
 async function apiRequest(url, options = {}) {
   const token = authService.getToken()
   console.log('API請求URL:', `${API_BASE_URL}${url}`)
+  console.log('當前環境:', environmentInfo.environment)
   console.log('Token:', token ? `${token.substring(0, 20)}...` : 'null')
   
   // 設置默認headers
@@ -23,13 +25,13 @@ async function apiRequest(url, options = {}) {
     console.warn('沒有找到Token!')
   }
 
-  const config = {
+  const requestConfig = {
     ...options,
     headers
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}${url}`, config)
+    const response = await fetch(`${API_BASE_URL}${url}`, requestConfig)
     
     // 如果是401未授權，清除token並跳轉到登入頁面
     if (response.status === 401) {

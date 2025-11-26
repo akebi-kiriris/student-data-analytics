@@ -246,7 +246,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { authService } from '../services/auth.js'
-import { apiService, API_ENDPOINTS } from '../services/api.js'
+import { simpleApiService, SIMPLE_API_ENDPOINTS } from '../services/api-simple.js'
 
 const router = useRouter()
 
@@ -318,7 +318,7 @@ const uploadFile = async () => {
     const formData = new FormData()
     formData.append('file', selectedFile.value)
     
-    const result = await apiService.upload(API_ENDPOINTS.FILE.UPLOAD, formData)
+    const result = await simpleApiService.upload(SIMPLE_API_ENDPOINTS.UPLOAD, formData)
     
     if (result.need_sheet_selection) {
       // 需要選擇工作表
@@ -354,7 +354,7 @@ const uploadToDatabase = async () => {
     formData.append('file', selectedFile.value)
     formData.append('sheet_name', selectedSheet.value)
     
-    const result = await apiService.upload(API_ENDPOINTS.FILE.UPLOAD, formData)
+    const result = await simpleApiService.upload(SIMPLE_API_ENDPOINTS.UPLOAD, formData)
     
     if (result.success) {
       alert(`工作表「${selectedSheet.value}」已成功存入資料庫！\n表格名稱：${result.table_name}\n共 ${result.rows_inserted} 筆資料`)
@@ -380,7 +380,7 @@ const uploadToDatabase = async () => {
 // 載入資料庫表格列表
 const loadDatabaseTables = async () => {
   try {
-    const response = await apiService.get(API_ENDPOINTS.DATABASE.NEW_TABLES)
+    const response = await simpleApiService.get(SIMPLE_API_ENDPOINTS.DATABASE_TABLES)
     
     if (response.success) {
       databaseTables.value = response.tables
@@ -388,7 +388,7 @@ const loadDatabaseTables = async () => {
       // 為每個表格載入行數
       for (const table of databaseTables.value) {
         try {
-          const countResponse = await apiService.get(`${API_ENDPOINTS.DATABASE.TABLE_COUNT}/${table.table_name}/count`)
+          const countResponse = await simpleApiService.get(`${SIMPLE_API_ENDPOINTS.TABLE_COUNT}/${table.table_name}/count`)
           if (countResponse.success) {
             table.row_count = countResponse.count.toLocaleString()
           }

@@ -4,10 +4,30 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + Vue</title>
+    <title>學生資料分析系統</title>
   </head>
   <body>
     <div id="app"></div>
+    <!-- 環境測試腳本 - 調試用 -->
+    <script>
+      window.debugEnvironment = () => {
+        console.log('=== 環境調試信息 ===')
+        console.log('Hostname:', window.location.hostname)
+        console.log('Protocol:', window.location.protocol)
+        console.log('Port:', window.location.port)
+        console.log('Full URL:', window.location.href)
+        
+        const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        console.log('Is Development:', isDev)
+        
+        const apiUrl = isDev ? 
+          'http://localhost:5000/api' : 
+          'https://student-analytics-backend-470050740360.asia-east1.run.app/api'
+        console.log('API URL:', apiUrl)
+        
+        return { isDev, apiUrl }
+      }
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
