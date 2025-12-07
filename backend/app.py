@@ -383,8 +383,26 @@ uploaded_files_table = Table(
     Column('table_name', String(100))
 )
 
-# 建立所有表格
-metadata.create_all(engine)
+# 建立所有表格（延遲初始化，避免啟動時連接失敗）
+def init_database():
+    """初始化資料庫，只在第一次請求時執行"""
+    try:
+        metadata.create_all(engine)
+        return True
+    except Exception as e:
+        print(f"[WARNING] 資料庫初始化失敗: {e}")
+        return False
+
+# 使用 Flask 的 before_first_request 確保資料庫已初始化
+_db_initialized = False
+
+@app.before_request
+def ensure_database_initialized():
+    global _db_initialized
+    if not _db_initialized:
+        init_database()
+        create_default_admin()
+        _db_initialized = True
 
 Session = sessionmaker(bind=engine)
 
@@ -431,9 +449,6 @@ def create_default_admin():
         print(f"建立預設管理員失敗: {e}")
     finally:
         session.close()
-
-# 建立預設管理員帳號
-create_default_admin()
 
 # === JWT 錯誤處理 ===
 @jwt.expired_token_loader
