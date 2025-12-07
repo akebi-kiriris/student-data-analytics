@@ -11,9 +11,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # 首先複製並安裝依賴
-COPY requirements-cloud.txt ./requirements.txt
+COPY requirements-cloud.txt requirements-cloudsql.txt ./
 RUN pip install --no-cache-dir --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements-cloud.txt
+RUN pip install --no-cache-dir -r requirements-cloudsql.txt
 
 # 複製應用程式碼
 COPY . .

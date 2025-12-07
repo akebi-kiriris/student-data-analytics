@@ -1,0 +1,8 @@
+# Cloud SQL 額外依賴
+# 本地開發不需要安裝這些，部署到雲端時才需要
+
+# PostgreSQL 驅動（用於 Cloud SQL）
+pg8000==1.30.3
+
+# Cloud SQL Python Connector（可選，用於更安全的連接）
+# cloud-sql-python-connector[pg8000]==1.5.0

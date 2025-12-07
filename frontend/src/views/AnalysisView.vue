@@ -1386,7 +1386,7 @@
             </div>
           </div>
           <div class="chart-with-export">
-            <div class="chart-container" style="position: relative; height: 400px; width: 100%;">
+            <div class="chart-container" style="position: relative; height: 350px; width: 100%;">
               <canvas id="statsChart"></canvas>
             </div>
             <el-button 
@@ -1403,25 +1403,42 @@
         <div v-if="multiSubjectStats" class="stats-card">
           <el-divider>多科目分年平均分析結果</el-divider>
           <div class="stats-summary">
-            <p><strong>分析期間：</strong>{{ multiSubjectStats.year_range }}</p>
-            <p v-if="multiSubjectStats.subjects"><strong>科目數量：</strong>{{ multiSubjectStats.subjects.length }} 個</p>
-            <p v-if="multiSubjectStats.subjects"><strong>分析科目：</strong>{{ multiSubjectStats.subjects.join(', ') }}</p>
-          </div>
-          <div class="chart-with-export">
-            <div class="chart-container" style="position: relative; height: 350px; width: 100%;">
-              <canvas id="multiSubjectChart"></canvas>
+            <div class="summary-row">
+              <p><strong>分析期間：</strong>{{ multiSubjectStats.year_range }}</p>
+              <p v-if="multiSubjectStats.subjects"><strong>科目數量：</strong>{{ multiSubjectStats.subjects.length }} 個</p>
             </div>
-            <el-button 
-              type="primary" 
-              class="export-btn"
-              @click="showExportDialog('multiSubjectChart', '多科目分年平均分析', multiSubjectStats)"
-              icon="Download"
-            >
-              📊 導出圖表
-            </el-button>
+            <div class="summary-row">
+              <p v-if="multiSubjectStats.subjects"><strong>分析科目：</strong>{{ multiSubjectStats.subjects.join(', ') }}</p>
+            </div>
           </div>
           
-          <el-divider>詳細數據</el-divider>
+          <!-- 統一的圖表和表格區域 -->
+          <div class="analysis-content">
+            <div class="chart-with-export">
+              <div class="chart-container" style="position: relative; height: 420px; width: 100%; margin-bottom: 20px;">
+                <canvas id="multiSubjectChart"></canvas>
+              </div>
+              <el-button 
+                type="primary" 
+                class="export-btn"
+                @click="showExportDialog('multiSubjectChart', '多科目分年平均分析', multiSubjectStats)"
+                icon="Download"
+              >
+                📊 導出圖表
+              </el-button>
+            </div>
+            
+            <el-divider>詳細數據</el-divider>
+            <div class="table-export-section">
+              <el-button 
+                type="success" 
+                size="small"
+                @click="exportTableData('multiSubject', '多科目分年平均數據', multiSubjectStats)"
+                icon="Download"
+              >
+                📋 導出表格數據
+              </el-button>
+            </div>
           <el-table 
             v-if="multiSubjectStats.years && multiSubjectStats.subjects && multiSubjectStats.data"
             :data="multiSubjectStats.subjects.map(subject => {
@@ -1456,6 +1473,7 @@
               </template>
             </el-table-column>
           </el-table>
+          </div>
         </div>
 
         <div v-if="yearlyAdmissionStats" class="stats-card">
@@ -1493,6 +1511,16 @@
           </div>
           
           <el-divider>詳細數據</el-divider>
+          <div class="table-export-section">
+            <el-button 
+              type="success" 
+              size="small"
+              @click="exportTableData('yearlyAdmission', '年度入學統計數據', yearlyAdmissionStats)"
+              icon="Download"
+            >
+              📋 導出表格數據
+            </el-button>
+          </div>
           <el-table 
             v-if="yearlyAdmissionStats.years && yearlyAdmissionStats.total_counts"
             :data="yearlyAdmissionStats.years.map((year, i) => ({
@@ -1564,6 +1592,16 @@
           </div>
           
           <el-divider>各年度學校類型分布詳細數據</el-divider>
+          <div class="table-export-section">
+            <el-button 
+              type="success" 
+              size="small"
+              @click="exportTableData('schoolSource', '學校來源統計數據', schoolSourceStats)"
+              icon="Download"
+            >
+              📋 導出表格數據
+            </el-button>
+          </div>
           <el-table 
             v-if="schoolSourceStats.years && schoolSourceStats.school_types && schoolSourceStats.data"
             :data="schoolSourceStats.years.map((year, index) => ({
@@ -1645,6 +1683,16 @@
           </div>
           
           <el-divider>各年度入學管道分布詳細數據</el-divider>
+          <div class="table-export-section">
+            <el-button 
+              type="success" 
+              size="small"
+              @click="exportTableData('admissionMethod', '入學管道統計數據', admissionMethodStats)"
+              icon="Download"
+            >
+              📋 導出表格數據
+            </el-button>
+          </div>
           <el-table 
             v-if="admissionMethodStats.years && admissionMethodStats.method_types && admissionMethodStats.data"
             :data="admissionMethodStats.years.map((year, index) => ({
@@ -2134,6 +2182,7 @@ import { authService } from '../services/auth.js'
 import { apiService, API_ENDPOINTS } from '../services/api.js'
 import Chart from 'chart.js/auto'
 import * as echarts from 'echarts'
+import html2canvas from 'html2canvas'
 
 // 導航欄相關
 const router = useRouter()
@@ -3233,7 +3282,8 @@ const renderColumnChart = (data) => {
       },
       options: {
         responsive: true,
-        maintainAspectRatio: true,
+        maintainAspectRatio: false,
+        aspectRatio: 2,
         plugins: {
           title: { 
             display: true, 
@@ -3324,9 +3374,20 @@ const renderMultiSubjectChart = (data) => {
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        aspectRatio: 2.2,
         plugins: {
-          title: { display: true, text: '各學年各科平均分數' },
-          legend: { position: 'top' }
+          title: { 
+            display: true, 
+            text: '各學年各科平均分數',
+            font: { size: 16 }
+          },
+          legend: { 
+            position: 'top',
+            labels: {
+              padding: 15,
+              usePointStyle: true
+            }
+          }
         },
         scales: {
           x: { 
@@ -3698,7 +3759,11 @@ const exportInFormat = (format) => {
       exportAsPDFAdvanced()
       break
     case 'csv':
-      exportAsCSV()
+      if (currentChartType.value === 'table') {
+        exportTableAsCSV()
+      } else {
+        exportAsCSV()
+      }
       break
     case 'json':
       exportAsJSON()
@@ -3714,6 +3779,8 @@ const exportAsImage = (format) => {
     exportCanvasAsImage(format)
   } else if (currentChartType.value === 'echarts') {
     exportEChartsAsImage(format)
+  } else if (currentChartType.value === 'table') {
+    exportTableAsImage(format)
   }
 }
 
@@ -4205,6 +4272,21 @@ const exportAsCSV = () => {
   }
 }
 
+// 專門的表格數據導出函數（支援多種格式）
+const exportTableData = (type, title, data) => {
+  if (!data) {
+    ElMessage.error('無可用數據')
+    return
+  }
+  
+  // 設置當前導出的數據和類型
+  currentChartId.value = `table_${type}`
+  currentExportTitle.value = title
+  currentChartType.value = 'table'
+  currentChartData.value = { type, data }
+  exportDialogVisible.value = true
+}
+
 // 導出為JSON
 const exportAsJSON = () => {
   if (!currentChartData.value) {
@@ -4236,6 +4318,312 @@ const exportAsJSON = () => {
   } catch (error) {
     console.error('JSON導出失敗:', error)
     ElMessage.error('JSON導出失敗，請重試')
+  }
+}
+
+// 表格CSV導出函數
+const exportTableAsCSV = () => {
+  if (!currentChartData.value) {
+    ElMessage.error('無可用數據')
+    return
+  }
+  
+  try {
+    const { type, data } = currentChartData.value
+    let csvContent = ''
+    const timestamp = new Date().toLocaleString('zh-TW').replace(/[/:]/g, '-')
+    
+    switch (type) {
+      case 'multiSubject':
+        // 多科目分年平均數據
+        csvContent = '科目,' + data.years.join(',') + '\n'
+        data.subjects.forEach(subject => {
+          const row = [subject]
+          data.years.forEach((year, index) => {
+            row.push(data.data[subject][index] || 'N/A')
+          })
+          csvContent += row.join(',') + '\n'
+        })
+        break
+        
+      case 'yearlyAdmission':
+        // 年度入學統計 - 包含百分比
+        if (data.has_gender) {
+          csvContent = '年份,總計,男性,男性比例,女性,女性比例\n'
+          data.years.forEach((year, index) => {
+            csvContent += `${year},${data.total_counts[index]},${data.male_counts[index]},${data.male_percentages[index]}%,${data.female_counts[index]},${data.female_percentages[index]}%\n`
+          })
+        } else {
+          csvContent = '年份,總計\n'
+          data.years.forEach((year, index) => {
+            csvContent += `${year},${data.total_counts[index]}\n`
+          })
+        }
+        break
+        
+      case 'schoolSource':
+        // 學校來源統計 - 包含百分比
+        const schoolHeaders = ['年份']
+        data.school_types.forEach(type => {
+          schoolHeaders.push(`${type} (人數)`, `${type} (%)`)
+        })
+        schoolHeaders.push('總計')
+        csvContent = schoolHeaders.join(',') + '\n'
+        
+        data.years.forEach((year, yearIndex) => {
+          const row = [year]
+          data.school_types.forEach(type => {
+            const count = data.data[type] ? data.data[type].counts[yearIndex] : 0
+            const percentage = data.data[type] ? data.data[type].percentages[yearIndex] : 0
+            row.push(count, `${percentage.toFixed(1)}%`)
+          })
+          const yearTotal = data.year_totals ? data.year_totals[yearIndex] : 0
+          row.push(yearTotal)
+          csvContent += row.join(',') + '\n'
+        })
+        break
+        
+      case 'admissionMethod':
+        // 入學管道統計 - 包含百分比
+        const methodHeaders = ['年份']
+        data.method_types.forEach(type => {
+          methodHeaders.push(`${type} (人數)`, `${type} (%)`)
+        })
+        methodHeaders.push('總計')
+        csvContent = methodHeaders.join(',') + '\n'
+        
+        data.years.forEach((year, yearIndex) => {
+          const row = [year]
+          data.method_types.forEach(method => {
+            const count = data.data[method] ? data.data[method].counts[yearIndex] : 0
+            const percentage = data.data[method] ? data.data[method].percentages[yearIndex] : 0
+            row.push(count, `${percentage.toFixed(1)}%`)
+          })
+          const yearTotal = data.year_totals ? data.year_totals[yearIndex] : 0
+          row.push(yearTotal)
+          csvContent += row.join(',') + '\n'
+        })
+        break
+        
+      default:
+        ElMessage.error('不支援的表格類型')
+        return
+    }
+    
+    // 下載CSV檔案
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `${currentExportTitle.value}_${timestamp}.csv`
+    link.click()
+    URL.revokeObjectURL(link.href)
+    
+    ElMessage.success(`${currentExportTitle.value} 已導出為 CSV 格式`)
+    
+  } catch (error) {
+    console.error('導出表格數據失敗:', error)
+    ElMessage.error('導出失敗：' + error.message)
+  }
+}
+
+// 表格圖片導出函數
+const exportTableAsImage = (format) => {
+  if (!currentChartData.value) {
+    ElMessage.error('無可用數據')
+    return
+  }
+
+  try {
+    const { type, data } = currentChartData.value
+    
+    // 創建HTML表格
+    const table = document.createElement('table')
+    table.style.cssText = `
+      border: 2px solid #4a90e2;
+      border-collapse: collapse;
+      font-family: 'Microsoft JhengHei', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+      font-size: 13px;
+      background-color: #fff;
+      margin: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      border-radius: 8px;
+      overflow: hidden;
+    `
+    
+    let headers = []
+    let rows = []
+    
+    switch (type) {
+      case 'multiSubject':
+        headers = ['科目', ...data.years]
+        data.subjects.forEach(subject => {
+          const row = [subject]
+          data.years.forEach((year, index) => {
+            row.push(data.data[subject][index] || 'N/A')
+          })
+          rows.push(row)
+        })
+        break
+        
+      case 'yearlyAdmission':
+        // 年度入學統計 - 包含百分比
+        if (data.has_gender) {
+          headers = ['年份', '總計', '男性', '男性比例', '女性', '女性比例']
+          data.years.forEach((year, index) => {
+            const row = [
+              year, 
+              data.total_counts[index],
+              data.male_counts[index],
+              `${data.male_percentages[index]}%`,
+              data.female_counts[index],
+              `${data.female_percentages[index]}%`
+            ]
+            rows.push(row)
+          })
+        } else {
+          headers = ['年份', '總計']
+          data.years.forEach((year, index) => {
+            rows.push([year, data.total_counts[index]])
+          })
+        }
+        break
+        
+      case 'schoolSource':
+        // 學校來源統計 - 包含百分比
+        headers = ['年份', ...data.school_types.map(type => `${type} (人數)`), ...data.school_types.map(type => `${type} (%)`), '總計']
+        data.years.forEach((year, yearIndex) => {
+          const row = [year]
+          // 先添加人數
+          data.school_types.forEach(type => {
+            const count = data.data[type] ? data.data[type].counts[yearIndex] : 0
+            row.push(count)
+          })
+          // 再添加百分比
+          data.school_types.forEach(type => {
+            const percentage = data.data[type] ? data.data[type].percentages[yearIndex] : 0
+            row.push(`${percentage.toFixed(1)}%`)
+          })
+          // 添加年度總計
+          const yearTotal = data.year_totals ? data.year_totals[yearIndex] : 0
+          row.push(yearTotal)
+          rows.push(row)
+        })
+        break
+        
+      case 'admissionMethod':
+        // 入學管道統計 - 包含百分比
+        headers = ['年份', ...data.method_types.map(type => `${type} (人數)`), ...data.method_types.map(type => `${type} (%)`), '總計']
+        data.years.forEach((year, yearIndex) => {
+          const row = [year]
+          // 先添加人數
+          data.method_types.forEach(method => {
+            const count = data.data[method] ? data.data[method].counts[yearIndex] : 0
+            row.push(count)
+          })
+          // 再添加百分比
+          data.method_types.forEach(method => {
+            const percentage = data.data[method] ? data.data[method].percentages[yearIndex] : 0
+            row.push(`${percentage.toFixed(1)}%`)
+          })
+          // 添加年度總計
+          const yearTotal = data.year_totals ? data.year_totals[yearIndex] : 0
+          row.push(yearTotal)
+          rows.push(row)
+        })
+        break
+    }
+    
+    // 添加表頭
+    const thead = table.createTHead()
+    const headerRow = thead.insertRow()
+    headers.forEach((header, index) => {
+      const th = document.createElement('th')
+      th.textContent = header
+      th.style.cssText = `
+        border: 1px solid #4a90e2;
+        padding: 12px 16px;
+        background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
+        color: white;
+        font-weight: 600;
+        text-align: center;
+        font-size: 14px;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        ${index === 0 ? 'position: sticky; left: 0; z-index: 10;' : ''}
+      `
+      headerRow.appendChild(th)
+    })
+    
+    // 添加標題行
+    const titleRow = thead.insertRow(0)
+    const titleCell = titleRow.insertCell()
+    titleCell.colSpan = headers.length
+    titleCell.textContent = currentExportTitle.value
+    titleCell.style.cssText = `
+      border: 2px solid #4a90e2;
+      padding: 16px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      font-weight: bold;
+      text-align: center;
+      font-size: 18px;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    `
+    
+    // 添加數據行
+    const tbody = table.createTBody()
+    rows.forEach((rowData, rowIndex) => {
+      const tr = tbody.insertRow()
+      tr.style.backgroundColor = rowIndex % 2 === 0 ? '#f8fafc' : '#fff'
+      tr.style.transition = 'background-color 0.2s ease'
+      
+      rowData.forEach((cellData, colIndex) => {
+        const td = tr.insertCell()
+        td.textContent = cellData
+        
+        const isFirstColumn = colIndex === 0
+        const isPercentageColumn = String(cellData).includes('%')
+        const isNumberColumn = !isFirstColumn && !isPercentageColumn && !isNaN(Number(cellData))
+        
+        td.style.cssText = `
+          border: 1px solid #e2e8f0;
+          padding: 10px 14px;
+          text-align: ${isFirstColumn ? 'left' : 'center'};
+          font-weight: ${isFirstColumn ? '600' : '400'};
+          color: ${isFirstColumn ? '#2d3748' : '#4a5568'};
+          background-color: ${isFirstColumn ? '#f7fafc' : 'inherit'};
+          ${isFirstColumn ? 'position: sticky; left: 0; z-index: 5;' : ''}
+          ${isPercentageColumn ? 'color: #3182ce; font-weight: 500;' : ''}
+          ${isNumberColumn ? 'font-family: Monaco, Consolas, monospace;' : ''}
+        `
+      })
+    })
+    
+    // 使用html2canvas將表格轉換為圖片
+    document.body.appendChild(table)
+    
+    html2canvas(table, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+      useCORS: true
+    }).then(canvas => {
+      document.body.removeChild(table)
+      
+      // 將canvas轉換為指定格式的圖片並下載
+      const link = document.createElement('a')
+      link.download = `${currentExportTitle.value}_表格.${format}`
+      link.href = canvas.toDataURL(`image/${format}`)
+      link.click()
+      
+      ElMessage.success(`表格已導出為 ${format.toUpperCase()} 格式`)
+    }).catch(error => {
+      document.body.removeChild(table)
+      console.error('表格轉圖片失敗:', error)
+      ElMessage.error('導出失敗，請重試')
+    })
+    
+  } catch (error) {
+    console.error('表格圖片導出失敗:', error)
+    ElMessage.error('導出失敗：' + error.message)
   }
 }
 
@@ -6302,6 +6690,33 @@ onMounted(() => {
 
 .button-group .el-button {
   margin-right: 10px;
+}
+
+/* 表格導出按鈕區域 */
+.table-export-section {
+  margin: 15px 0;
+  padding: 10px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  text-align: right;
+}
+
+.table-export-section .el-button {
+  margin: 0;
+}
+
+/* 分析內容區域統一樣式 */
+.analysis-content {
+  width: 100%;
+}
+
+.chart-section {
+  width: 100%;
+  margin-bottom: 25px;
+}
+
+.table-section {
+  width: 100%;
 }
 
 .chart-container {

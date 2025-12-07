@@ -118,6 +118,40 @@ export const simpleApiService = {
       console.error('上傳失敗:', error)
       throw error
     }
+  },
+
+  // 檔案下載
+  downloadFile: async (url) => {
+    const token = getToken()
+    const headers = {}
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}${url}`, {
+        method: 'GET',
+        headers
+      })
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      // 取得下載 URL
+      const data = await response.json()
+      if (data.download_url) {
+        // 開啟下載連結
+        window.open(data.download_url, '_blank')
+        return data
+      } else {
+        throw new Error('無法取得下載連結')
+      }
+    } catch (error) {
+      console.error('下載失敗:', error)
+      throw error
+    }
   }
 }
 
@@ -125,7 +159,8 @@ export const simpleApiService = {
 export const SIMPLE_API_ENDPOINTS = {
   DATABASE_TABLES: '/database/tables',
   TABLE_COUNT: '/database/tables',
-  UPLOAD: '/upload'
+  UPLOAD: '/upload',
+  FILES: '/files'
 }
 
 export default simpleApiService

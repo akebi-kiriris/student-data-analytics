@@ -88,6 +88,40 @@
           </div>
         </div>
 
+        <!-- 已上傳檔案列表 -->
+        <div class="uploaded-files-section">
+          <div class="section-card">
+            <h3>已上傳的檔案</h3>
+            <div v-if="uploadedFiles.length === 0" class="empty-state">
+              <p>📁 目前沒有已上傳的檔案</p>
+              <p>檔案上傳後會顯示在這裡</p>
+            </div>
+            <div v-else class="files-grid">
+              <div 
+                v-for="file in uploadedFiles" 
+                :key="file.id"
+                class="file-card"
+              >
+                <div class="file-header">
+                  <h4>{{ file.original_filename }}</h4>
+                  <div class="file-meta">
+                    <span class="file-size">{{ formatFileSize(file.file_size) }}</span>
+                    <span class="file-date">{{ new Date(file.created_at).toLocaleDateString('zh-TW') }}</span>
+                  </div>
+                </div>
+                <div class="file-actions">
+                  <button @click="downloadFile(file)" class="download-btn">
+                    📥 下載檔案
+                  </button>
+                  <button @click="deleteFile(file)" class="delete-file-btn">
+                    🗑️ 刪除
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 已上傳的資料表列表 -->
         <div class="database-tables-section">
           <div class="section-card">
@@ -258,6 +292,7 @@ const availableSheets = ref([])
 const selectedSheet = ref('')
 const isUploading = ref(false)
 const databaseTables = ref([])
+const uploadedFiles = ref([]) // 新增：已上傳檔案清單
 
 // CRUD 相關數據
 const showDataManager = ref(false)
@@ -367,6 +402,7 @@ const uploadToDatabase = async () => {
       
       // 重新載入資料庫表格列表
       loadDatabaseTables()
+      loadUploadedFiles() // 新增：同時重新載入檔案清單
     } else {
       throw new Error(result.error || '存入資料庫失敗')
     }
@@ -406,6 +442,50 @@ const loadDatabaseTables = async () => {
   }
 }
 
+// 新增：載入已上傳檔案清單
+const loadUploadedFiles = async () => {
+  try {
+    const response = await simpleApiService.get(SIMPLE_API_ENDPOINTS.FILES)
+    if (response.success) {
+      uploadedFiles.value = response.files || []
+    } else {
+      console.warn('無法載入檔案清單:', response.error)
+      uploadedFiles.value = []
+    }
+  } catch (error) {
+    console.warn('載入檔案清單失敗:', error)
+    uploadedFiles.value = []
+  }
+}
+
+// 新增：下載檔案
+const downloadFile = async (file) => {
+  try {
+    await simpleApiService.downloadFile(`${SIMPLE_API_ENDPOINTS.FILES}/${file.id}/download`)
+  } catch (error) {
+    alert('下載失敗：' + error.message)
+  }
+}
+
+// 新增：刪除檔案
+const deleteFile = async (file) => {
+  if (!confirm(`確定要刪除「${file.original_filename}」嗎？此操作無法復原。`)) {
+    return
+  }
+  
+  try {
+    const result = await simpleApiService.delete(`${SIMPLE_API_ENDPOINTS.FILES}/${file.id}`)
+    if (result.success) {
+      alert('檔案刪除成功！')
+      await loadUploadedFiles() // 重新載入檔案清單
+    } else {
+      throw new Error(result.error || '刪除失敗')
+    }
+  } catch (error) {
+    alert('刪除失敗：' + error.message)
+  }
+}
+
 const analyzeTable = (table) => {
   // 跳轉到分析頁面並選擇該表格
   router.push({
@@ -428,13 +508,17 @@ const viewTableData = async (table) => {
 // CRUD 相關方法
 const loadTableData = async (page = 1) => {
   try {
-    const params = {
-      page,
-      limit: 50,
-      search: searchQuery.value
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: '50'
+    })
+    
+    if (searchQuery.value) {
+      params.append('search', searchQuery.value)
     }
     
-    const result = await apiService.crud.getTableData(currentTable.value.table_name, params)
+    const url = `/database/tables/${currentTable.value.table_name}/data?${params}`
+    const result = await simpleApiService.get(url)
     
     if (result.success) {
       tableData.value = result.data
@@ -485,7 +569,7 @@ const saveEdit = async (rowId) => {
       updateData[col] = editData.value[col]
     })
     
-    const result = await apiService.crud.updateRow(currentTable.value.table_name, rowId, updateData)
+    const result = await simpleApiService.put(`/database/tables/${currentTable.value.table_name}/data/${rowId}`, updateData)
     
     if (result.success) {
       alert('資料更新成功！')
@@ -506,7 +590,7 @@ const deleteRow = async (rowId) => {
   }
   
   try {
-    const result = await apiService.crud.deleteRow(currentTable.value.table_name, rowId)
+    const result = await simpleApiService.delete(`/database/tables/${currentTable.value.table_name}/data/${rowId}`)
     
     if (result.success) {
       alert('資料刪除成功！')
@@ -530,7 +614,7 @@ const showCreateDialog = () => {
 
 const createNewRow = async () => {
   try {
-    const result = await apiService.crud.createRow(currentTable.value.table_name, newRowData.value)
+    const result = await simpleApiService.post(`/database/tables/${currentTable.value.table_name}/data`, newRowData.value)
     
     if (result.success) {
       alert('資料新增成功！')
@@ -685,6 +769,7 @@ onMounted(() => {
   updateTime()
   setInterval(updateTime, 1000)
   loadDatabaseTables() // 載入已存入的資料庫表格
+  loadUploadedFiles() // 新增：載入已上傳檔案
 })
 </script>
 
@@ -877,6 +962,88 @@ onMounted(() => {
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* 已上傳檔案列表 */
+.uploaded-files-section {
+  margin-bottom: 20px;
+}
+
+.files-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.file-card {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+  background: #f9f9f9;
+  transition: all 0.3s;
+}
+
+.file-card:hover {
+  border-color: #4caf50;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.file-header h4 {
+  margin: 0 0 8px 0;
+  color: #212121;
+  font-size: 15px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.file-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #666;
+}
+
+.file-size {
+  color: #4caf50;
+  font-weight: 500;
+}
+
+.file-date {
+  color: #999;
+}
+
+.file-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.download-btn, .delete-file-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.3s;
+  flex: 1;
+}
+
+.download-btn {
+  background: #2196f3;
+  color: white;
+}
+
+.delete-file-btn {
+  background: #f44336;
+  color: white;
+}
+
+.download-btn:hover {
+  background: #1976d2;
+}
+
+.delete-file-btn:hover {
+  background: #d32f2f;
 }
 
 /* 工作表選擇區域 */
