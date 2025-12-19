@@ -4,19 +4,20 @@ FROM python:3.11-slim
 # 設定工作目錄
 WORKDIR /app
 
-# 安裝系統依賴
+# 安裝系統依賴（合併安裝 pg8000 需要的依賴）
 RUN apt-get update && apt-get install -y \
     sqlite3 \
     libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # 首先複製並安裝依賴
-COPY requirements-cloud.txt ./requirements.txt
-RUN pip install --no-cache-dir --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements-cloud.txt ./
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements-cloud.txt && \
+    rm -f requirements-cloud.txt
 
 # 複製應用程式碼
-COPY . .
+COPY app.py ./
 
 # 建立必要的目錄並設定權限
 RUN mkdir -p uploads database

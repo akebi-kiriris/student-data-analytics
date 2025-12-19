@@ -9,6 +9,16 @@ from sqlalchemy.orm import sessionmaker
 import re
 import bcrypt
 from datetime import datetime, timedelta, timezone
+import tempfile
+import uuid
+
+# 條件性匯入 Google Cloud Storage（僅在雲端環境）
+try:
+    from google.cloud import storage
+    CLOUD_STORAGE_AVAILABLE = True
+except ImportError:
+    CLOUD_STORAGE_AVAILABLE = False
+    storage = None
 
 
 def filter_dataframe_until_empty_row(df):
@@ -225,14 +235,44 @@ app.config['JWT_ALGORITHM'] = 'HS256'
 jwt = JWTManager(app)
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 限制 100MB
+
+# Google Cloud Storage 配置（僅在雲端環境）
+def is_cloud_environment():
+    """檢測是否為雲端環境"""
+    return os.getenv('GOOGLE_CLOUD_PROJECT') is not None and CLOUD_STORAGE_AVAILABLE
+
+# 初始化 Cloud Storage（僅在雲端環境）
+storage_client = None
+bucket = None
+if is_cloud_environment():
+    try:
+        storage_client = storage.Client()
+        BUCKET_NAME = os.getenv('GCS_BUCKET_NAME', 'student-analytics-files')
+        bucket = storage_client.bucket(BUCKET_NAME)
+        print("[INFO] 雲端環境：已啟用 Cloud Storage")
+    except Exception as e:
+        print(f"[WARNING] Cloud Storage 初始化失敗: {e}")
+        storage_client = None
+        bucket = None
+else:
+    if not CLOUD_STORAGE_AVAILABLE:
+        print("[INFO] 本地環境：google-cloud-storage 未安裝，使用本地檔案儲存")
+    else:
+        print("[INFO] 本地環境：使用本地檔案儲存")
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['DATABASE_FOLDER'] = 'database'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['DATABASE_FOLDER'], exist_ok=True)
 
-# === SQLite 設定 ===
-DATABASE_PATH = os.path.join(app.config['DATABASE_FOLDER'], 'excel_data.db')
-DATABASE_URL = f'sqlite:///{DATABASE_PATH}'
+# === 資料庫配置 ===
+def get_database_url():
+    """使用 SQLite 資料庫"""
+    print("[INFO] 使用本地 SQLite 資料庫")
+    db_path = os.path.join(app.config['DATABASE_FOLDER'], 'excel_data.db')
+    return f'sqlite:///{db_path}'
+
+DATABASE_URL = get_database_url()
+DATABASE_PATH = os.path.join(app.config['DATABASE_FOLDER'], 'excel_data.db')  # SQLite 路徑（本地用）
 engine = create_engine(DATABASE_URL, echo=False)
 metadata = MetaData()
 
@@ -256,8 +296,11 @@ def create_excel_table(table_name, columns):
             conn.execute(text(f'DROP TABLE IF EXISTS "{table_name}"'))
             conn.commit()
     
-    # 建立新表
-    cols = [Column('id', Integer, primary_key=True, autoincrement=True)]
+    # 建立新表（添加 user_id 欄位用於多租戶隔離）
+    cols = [
+        Column('id', Integer, primary_key=True, autoincrement=True),
+        Column('user_id', String(50), nullable=False, index=True)  # 多租戶欄位
+    ]
     for col in columns:
         # SQLite 相容的欄位名稱處理
         safe_col_name = col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
@@ -283,8 +326,39 @@ users_table = Table(
     Column('last_login', DateTime)
 )
 
-# 建立所有表格
-metadata.create_all(engine)
+# === 檔案上傳記錄表格 ===
+uploaded_files_table = Table(
+    'uploaded_files', metadata,
+    Column('id', Integer, primary_key=True, autoincrement=True),
+    Column('file_id', String(50), unique=True, nullable=False),
+    Column('user_id', String(50), nullable=False),
+    Column('original_filename', String(255), nullable=False),
+    Column('blob_name', String(500), nullable=False),  # Cloud Storage blob 路徑
+    Column('upload_time', DateTime, default=datetime.utcnow),
+    Column('sheet_name', String(100)),
+    Column('table_name', String(100))
+)
+
+# 建立所有表格（延遲初始化，避免啟動時連接失敗）
+def init_database():
+    """初始化資料庫，只在第一次請求時執行"""
+    try:
+        metadata.create_all(engine)
+        return True
+    except Exception as e:
+        print(f"[WARNING] 資料庫初始化失敗: {e}")
+        return False
+
+# 使用 Flask 的 before_first_request 確保資料庫已初始化
+_db_initialized = False
+
+@app.before_request
+def ensure_database_initialized():
+    global _db_initialized
+    if not _db_initialized:
+        init_database()
+        create_default_admin()
+        _db_initialized = True
 
 Session = sessionmaker(bind=engine)
 
@@ -331,9 +405,6 @@ def create_default_admin():
         print(f"建立預設管理員失敗: {e}")
     finally:
         session.close()
-
-# 建立預設管理員帳號
-create_default_admin()
 
 # === JWT 錯誤處理 ===
 @jwt.expired_token_loader
@@ -545,6 +616,8 @@ def logout():
 def upload_file():
     """
     上傳 Excel 檔案並將指定工作表的資料存入 SQLite 資料庫
+    - 雲端環境：儲存到 Cloud Storage
+    - 本地環境：儲存到本地檔案夾
     """
     if 'file' not in request.files:
         return jsonify({"error": "No file part"}), 400
@@ -556,138 +629,155 @@ def upload_file():
         return jsonify({"error": "No selected file"}), 400
 
     try:
-        # 儲存檔案
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-        file.save(filepath)
-
-        # 如果沒有指定工作表，先回傳所有工作表名稱讓前端選擇
-        if not sheet_name:
-            xl = pd.ExcelFile(filepath)
-            return jsonify({
-                "filename": file.filename,
-                "sheets": xl.sheet_names,
-                "need_sheet_selection": True
-            }), 200
-
-        # 讀取指定工作表
-        df = pd.read_excel(filepath, sheet_name=sheet_name)
-        
-        # 過濾資料：在遇到空白行時停止讀取
-        df = filter_dataframe_until_empty_row(df)
-        
-        if df.empty:
-            return jsonify({"error": "工作表中沒有有效資料"}), 400
+        # 根據環境選擇儲存方式
+        if is_cloud_environment() and bucket is not None:
+            # 雲端環境：使用 Cloud Storage
+            return upload_to_cloud_storage(file, sheet_name)
+        else:
+            # 本地環境：使用本地儲存
+            return upload_to_local_storage(file, sheet_name)
             
-        columns = df.columns.tolist()
-
-        # 建立資料表名稱：檔名_工作表名
-        base_name = os.path.splitext(file.filename)[0]
-        safe_base_name = base_name.replace('-', '_').replace(' ', '_').replace('(', '').replace(')', '')
-        safe_sheet_name = sheet_name.replace('-', '_').replace(' ', '_').replace('(', '').replace(')', '')
-        table_name = f"excel_{safe_base_name}_{safe_sheet_name}"
-
-        # 建立資料表
-        table = create_excel_table(table_name, columns)
-        
-        # 將資料寫入資料庫
-        session = Session()
-        try:
-            # 轉換資料並插入
-            data_dicts = []
-            for _, row in df.iterrows():
-                row_dict = {}
-                for i, col in enumerate(columns):
-                    safe_col_name = col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
-                    row_dict[safe_col_name] = str(row.iloc[i]) if pd.notna(row.iloc[i]) else ''
-                data_dicts.append(row_dict)
-            
-            session.execute(table.insert(), data_dicts)
-            session.commit()
-            
-            return jsonify({
-                "success": True,
-                "filename": file.filename,
-                "sheet_name": sheet_name,
-                "table_name": table_name,
-                "columns": columns,
-                "rows_inserted": len(data_dicts)
-            }), 200
-            
-        except Exception as e:
-            session.rollback()
-            raise e
-        finally:
-            session.close()
-
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+def upload_to_cloud_storage(file, sheet_name):
+    """雲端儲存邏輯"""
+    # 生成唯一檔案名
+    file_id = str(uuid.uuid4())
+    file_extension = os.path.splitext(file.filename)[1]
+    blob_name = f"uploads/{get_jwt_identity()}/{file_id}{file_extension}"
+    
+    # 上傳檔案到 Cloud Storage
+    blob = bucket.blob(blob_name)
+    file.seek(0)  # 重置檔案指標
+    blob.upload_from_file(file, content_type=file.content_type)
+    
+    # 如果沒有指定工作表，先回傳所有工作表名稱讓前端選擇
+    if not sheet_name:
+        # 從 Cloud Storage 下載檔案到臨時位置讀取工作表
+        with tempfile.NamedTemporaryFile(suffix=file_extension, delete=False) as temp_file:
+            blob.download_to_filename(temp_file.name)
+            xl = pd.ExcelFile(temp_file.name)
+            sheets = xl.sheet_names
+        
+        # 清理臨時檔案
+        os.unlink(temp_file.name)
+        
+        return jsonify({
+            "filename": file.filename,
+            "file_id": file_id,
+            "blob_name": blob_name,
+            "sheets": sheets,
+            "need_sheet_selection": True
+        }), 200
+
+    # 從 Cloud Storage 讀取指定工作表
+    with tempfile.NamedTemporaryFile(suffix=file_extension, delete=False) as temp_file:
+        blob.download_to_filename(temp_file.name)
+        df = pd.read_excel(temp_file.name, sheet_name=sheet_name)
+    
+    # 清理臨時檔案
+    os.unlink(temp_file.name)
+    
+    # 處理資料並存入資料庫
+    return process_excel_data(file, df, sheet_name, file_id=file_id, blob_name=blob_name)
+
+
+def upload_to_local_storage(file, sheet_name):
+    """本地儲存邏輯（原有邏輯）"""
+    # 儲存檔案到本地
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+    file.save(filepath)
+
+    # 如果沒有指定工作表，先回傳所有工作表名稱讓前端選擇
+    if not sheet_name:
+        xl = pd.ExcelFile(filepath)
+        return jsonify({
+            "filename": file.filename,
+            "sheets": xl.sheet_names,
+            "need_sheet_selection": True
+        }), 200
+
+    # 讀取指定工作表
+    df = pd.read_excel(filepath, sheet_name=sheet_name)
+    
+    # 處理資料並存入資料庫
+    return process_excel_data(file, df, sheet_name)
+
+
+def process_excel_data(file, df, sheet_name, file_id=None, blob_name=None):
+    """
+    共用的 Excel 資料處理邏輯
+    自動添加 user_id 實現多租戶資料隔離
+    """
+    # 取得當前使用者 ID
+    current_user_id = get_jwt_identity()
+    
+    # 過濾資料：在遇到空白行時停止讀取
+    df = filter_dataframe_until_empty_row(df)
+    
+    if df.empty:
+        return jsonify({"error": "工作表中沒有有效資料"}), 400
+        
+    columns = df.columns.tolist()
+
+    # 建立資料表名稱：{user_id}_{工作表名稱}_{日期時間}
+    # 格式：1_整理後總表_120704091107（年月日時分秒，去掉前兩位年份）
+    safe_sheet_name = sheet_name.replace('-', '_').replace(' ', '_').replace('(', '').replace(')', '')
+    timestamp = datetime.now().strftime('%y%m%d%H%M%S')  # 120704091107 格式
+    table_name = f"{current_user_id}_{safe_sheet_name}_{timestamp}"
+
+    # 建立資料表
+    table = create_excel_table(table_name, columns)
+    
+    # 將資料寫入資料庫
+    session = Session()
+    try:
+        # 轉換資料並插入（自動添加 user_id）
+        data_dicts = []
+        for _, row in df.iterrows():
+            row_dict = {'user_id': current_user_id}  # 多租戶：記錄上傳者
+            for i, col in enumerate(columns):
+                safe_col_name = col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
+                row_dict[safe_col_name] = str(row.iloc[i]) if pd.notna(row.iloc[i]) else ''
+            data_dicts.append(row_dict)
+        
+        session.execute(table.insert(), data_dicts)
+        session.commit()
+        
+        # 記錄檔案資訊（僅雲端環境需要）
+        if file_id and blob_name:
+            current_time = datetime.utcnow()
+            with sqlite3.connect(DATABASE_PATH) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO uploaded_files (file_id, user_id, original_filename, blob_name, upload_time, sheet_name, table_name)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (file_id, get_jwt_identity(), file.filename, blob_name, current_time.isoformat(), sheet_name, table_name))
+                conn.commit()
+        
+        response_data = {
+            "success": True,
+            "filename": file.filename,
+            "sheet_name": sheet_name,
+            "table_name": table_name,
+            "columns": columns,
+            "rows_inserted": len(data_dicts)
+        }
+        
+        if file_id:
+            response_data["file_id"] = file_id
+            
+        return jsonify(response_data), 200
+        
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
     
 
-@app.route('/api/database_tables', methods=['GET'])
-@jwt_required()
-def list_database_tables():
-    """
-    取得資料庫中所有已存入的表格清單
-    """
-    try:
-        inspector = inspect(engine)
-        tables = inspector.get_table_names()
-        
-        # 只回傳以 excel_ 開頭的表格（排除系統表格）
-        excel_tables = [table for table in tables if table.startswith('excel_')]
-        
-        # 解析表格名稱，提取檔名和工作表名
-        table_info = []
-        for table in excel_tables:
-            try:
-                # 格式：excel_檔名_工作表名
-                parts = table.replace('excel_', '', 1).rsplit('_', 1)
-                if len(parts) == 2:
-                    filename = parts[0]
-                    sheet_name = parts[1]
-                    table_info.append({
-                        'table_name': table,
-                        'display_name': f"{filename} - {sheet_name}",
-                        'filename': filename,
-                        'sheet_name': sheet_name
-                    })
-            except Exception as e:
-                # 如果解析失敗，就直接顯示表格名稱
-                table_info.append({
-                    'table_name': table,
-                    'display_name': table,
-                    'filename': '',
-                    'sheet_name': ''
-                })
-        
-        return jsonify({'tables': table_info})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/table_columns', methods=['POST'])
-@jwt_required()
-def get_table_columns():
-    """
-    取得指定資料表的欄位清單
-    """
-    try:
-        data = request.get_json()
-        table_name = data.get('table_name')
-        
-        if not table_name:
-            return jsonify({'error': '缺少 table_name'}), 400
-            
-        inspector = inspect(engine)
-        if not inspector.has_table(table_name):
-            return jsonify({'error': '找不到指定的資料表'}), 404
-            
-        columns_info = inspector.get_columns(table_name)
-        columns = [col['name'] for col in columns_info if col['name'] != 'id']  # 排除 id 欄位
-        
-        return jsonify({'columns': columns})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/database/tables', methods=['GET'])
@@ -736,6 +826,35 @@ def list_database_tables_new():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/table_columns', methods=['POST'])
+@jwt_required()
+def get_table_columns():
+    """
+    取得指定表格的欄位清單
+    """
+    try:
+        data = request.get_json()
+        table_name = data.get('table_name')
+        
+        if not table_name:
+            return jsonify({'error': '缺少table_name參數'}), 400
+        
+        # 檢查資料表是否存在
+        inspector = inspect(engine)
+        if not inspector.has_table(table_name):
+            return jsonify({'error': '找不到指定的資料表'}), 404
+        
+        # 取得表格欄位資訊
+        columns_info = inspector.get_columns(table_name)
+        columns = [col['name'] for col in columns_info if col['name'] != 'id']
+        
+        return jsonify({'columns': columns})
+        
+    except Exception as e:
+        print(f"Error getting table columns: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/database/tables/<table_name>/count', methods=['GET'])
 @jwt_required()
 def get_table_row_count(table_name):
@@ -763,13 +882,16 @@ def get_table_row_count(table_name):
 @jwt_required()
 def get_table_data(table_name):
     """
-    分頁查詢表格數據
+    分頁查詢表格數據（只顯示當前用戶的資料）
     """
     try:
         # 檢查資料表是否存在
         inspector = inspect(engine)
         if not inspector.has_table(table_name):
             return jsonify({'success': False, 'error': '找不到指定的資料表'}), 404
+        
+        # 取得當前使用者 ID
+        current_user_id = get_jwt_identity()
         
         # 取得查詢參數
         page = int(request.args.get('page', 1))
@@ -785,24 +907,24 @@ def get_table_data(table_name):
         
         session = Session()
         try:
-            # 構建基礎查詢
+            # 構建基礎查詢（添加 user_id 過濾）
             if search:
                 # 添加搜尋功能 - 在所有文字欄位中搜尋
                 search_conditions = []
                 for col in columns:
                     search_conditions.append(f'`{col}` LIKE :search')
-                search_query = f"SELECT * FROM `{table_name}` WHERE {' OR '.join(search_conditions)} ORDER BY id LIMIT :limit OFFSET :offset"
-                count_query = f"SELECT COUNT(*) FROM `{table_name}` WHERE {' OR '.join(search_conditions)}"
+                search_query = f"SELECT * FROM `{table_name}` WHERE user_id = :user_id AND ({' OR '.join(search_conditions)}) ORDER BY id LIMIT :limit OFFSET :offset"
+                count_query = f"SELECT COUNT(*) FROM `{table_name}` WHERE user_id = :user_id AND ({' OR '.join(search_conditions)})"
                 
-                result = session.execute(text(search_query), {'search': f'%{search}%', 'limit': limit, 'offset': offset}).fetchall()
-                total_count = session.execute(text(count_query), {'search': f'%{search}%'}).scalar()
+                result = session.execute(text(search_query), {'user_id': current_user_id, 'search': f'%{search}%', 'limit': limit, 'offset': offset}).fetchall()
+                total_count = session.execute(text(count_query), {'user_id': current_user_id, 'search': f'%{search}%'}).scalar()
             else:
                 # 無搜尋條件
-                data_query = f"SELECT * FROM `{table_name}` ORDER BY id LIMIT :limit OFFSET :offset"
-                count_query = f"SELECT COUNT(*) FROM `{table_name}`"
+                data_query = f"SELECT * FROM `{table_name}` WHERE user_id = :user_id ORDER BY id LIMIT :limit OFFSET :offset"
+                count_query = f"SELECT COUNT(*) FROM `{table_name}` WHERE user_id = :user_id"
                 
-                result = session.execute(text(data_query), {'limit': limit, 'offset': offset}).fetchall()
-                total_count = session.execute(text(count_query)).scalar()
+                result = session.execute(text(data_query), {'user_id': current_user_id, 'limit': limit, 'offset': offset}).fetchall()
+                total_count = session.execute(text(count_query), {'user_id': current_user_id}).scalar()
             
             # 轉換結果為字典列表
             data = []
@@ -838,13 +960,16 @@ def get_table_data(table_name):
 @jwt_required()
 def create_table_row(table_name):
     """
-    新增單筆資料
+    新增單筆資料（自動添加當前用戶的 user_id）
     """
     try:
         # 檢查資料表是否存在
         inspector = inspect(engine)
         if not inspector.has_table(table_name):
             return jsonify({'success': False, 'error': '找不到指定的資料表'}), 404
+        
+        # 取得當前使用者 ID
+        current_user_id = get_jwt_identity()
         
         data = request.get_json()
         if not data:
@@ -864,7 +989,11 @@ def create_table_row(table_name):
             # 準備插入資料，只保留表格中存在的欄位
             insert_data = {}
             for col in columns:
-                insert_data[col] = data.get(col, '')
+                # user_id 使用當前登入用戶的 ID
+                if col == 'user_id':
+                    insert_data[col] = current_user_id
+                else:
+                    insert_data[col] = data.get(col, '')
             
             result = session.execute(text(insert_query), insert_data)
             session.commit()
@@ -886,7 +1015,7 @@ def create_table_row(table_name):
 @jwt_required()
 def update_table_row(table_name, row_id):
     """
-    更新指定資料
+    更新指定資料（只能更新自己的資料）
     """
     try:
         # 檢查資料表是否存在
@@ -894,22 +1023,25 @@ def update_table_row(table_name, row_id):
         if not inspector.has_table(table_name):
             return jsonify({'success': False, 'error': '找不到指定的資料表'}), 404
         
+        # 取得當前使用者 ID
+        current_user_id = get_jwt_identity()
+        
         data = request.get_json()
         if not data:
             return jsonify({'success': False, 'error': '缺少資料內容'}), 400
         
-        # 取得表格欄位資訊（排除 id）
+        # 取得表格欄位資訊（排除 id 和 user_id）
         columns_info = inspector.get_columns(table_name)
-        columns = [col['name'] for col in columns_info if col['name'] != 'id']
+        columns = [col['name'] for col in columns_info if col['name'] not in ['id', 'user_id']]
         
         session = Session()
         try:
-            # 檢查資料是否存在
-            check_query = f"SELECT COUNT(*) FROM `{table_name}` WHERE id = :row_id"
-            exists = session.execute(text(check_query), {'row_id': row_id}).scalar()
+            # 檢查資料是否存在且屬於當前用戶
+            check_query = f"SELECT COUNT(*) FROM `{table_name}` WHERE id = :row_id AND user_id = :user_id"
+            exists = session.execute(text(check_query), {'row_id': row_id, 'user_id': current_user_id}).scalar()
             
             if not exists:
-                return jsonify({'success': False, 'error': '找不到指定的資料'}), 404
+                return jsonify({'success': False, 'error': '找不到指定的資料或無權限修改'}), 404
             
             # 構建更新語句
             set_clauses = [f'`{col}` = :{col}' for col in columns if col in data]
@@ -940,7 +1072,7 @@ def update_table_row(table_name, row_id):
 @jwt_required()
 def delete_table_row(table_name, row_id):
     """
-    刪除指定資料
+    刪除指定資料（只能刪除自己的資料）
     """
     try:
         # 檢查資料表是否存在
@@ -948,18 +1080,21 @@ def delete_table_row(table_name, row_id):
         if not inspector.has_table(table_name):
             return jsonify({'success': False, 'error': '找不到指定的資料表'}), 404
         
+        # 取得當前使用者 ID
+        current_user_id = get_jwt_identity()
+        
         session = Session()
         try:
-            # 檢查資料是否存在
-            check_query = f"SELECT COUNT(*) FROM `{table_name}` WHERE id = :row_id"
-            exists = session.execute(text(check_query), {'row_id': row_id}).scalar()
+            # 檢查資料是否存在且屬於當前用戶
+            check_query = f"SELECT COUNT(*) FROM `{table_name}` WHERE id = :row_id AND user_id = :user_id"
+            exists = session.execute(text(check_query), {'row_id': row_id, 'user_id': current_user_id}).scalar()
             
             if not exists:
-                return jsonify({'success': False, 'error': '找不到指定的資料'}), 404
+                return jsonify({'success': False, 'error': '找不到指定的資料或無權限刪除'}), 404
             
-            # 執行刪除
-            delete_query = f"DELETE FROM `{table_name}` WHERE id = :row_id"
-            session.execute(text(delete_query), {'row_id': row_id})
+            # 執行刪除（添加 user_id 檢查）
+            delete_query = f"DELETE FROM `{table_name}` WHERE id = :row_id AND user_id = :user_id"
+            session.execute(text(delete_query), {'row_id': row_id, 'user_id': current_user_id})
             session.commit()
             
             return jsonify({'success': True, 'message': '資料刪除成功'})
@@ -1792,9 +1927,7 @@ def top_schools_stats():
         print(f"[top_schools_stats] filename: {filename}, sheet: {sheet}")
         print(f"[top_schools_stats] school_col: {school_col}, year_col: {year_col}")
         
-        # 建立資料庫連接
-        engine = create_engine(f'sqlite:///database/excel_data.db')
-        Session = sessionmaker(bind=engine)
+        # 使用全域資料庫連接
         session = Session()
         
         try:
@@ -3019,6 +3152,163 @@ def region_subject_analysis():
     finally:
         if 'session' in locals():
             session.close()
+
+
+# === 檔案管理 API ===
+
+@app.route('/api/files', methods=['GET'])
+@jwt_required()
+def list_user_files():
+    """取得當前用戶的檔案清單"""
+    try:
+        user_id = get_jwt_identity()
+        
+        # 檢查是否有檔案記錄表
+        inspector = inspect(engine)
+        if not inspector.has_table('uploaded_files'):
+            return jsonify({'success': True, 'files': []}), 200
+        
+        with sqlite3.connect(DATABASE_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT file_id, original_filename, upload_time, sheet_name, table_name
+                FROM uploaded_files 
+                WHERE user_id = ? 
+                ORDER BY upload_time DESC
+            """, (user_id,))
+            
+            files = []
+            for row in cursor.fetchall():
+                files.append({
+                    'file_id': row[0],
+                    'filename': row[1],
+                    'upload_time': row[2],
+                    'sheet_name': row[3],
+                    'table_name': row[4]
+                })
+        
+        return jsonify({'success': True, 'files': files}), 200
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/files/<file_id>/download', methods=['GET'])
+@jwt_required()
+def download_file(file_id):
+    """下載檔案"""
+    try:
+        user_id = get_jwt_identity()
+        
+        # 檢查檔案是否存在且屬於當前用戶
+        inspector = inspect(engine)
+        if not inspector.has_table('uploaded_files'):
+            return jsonify({'success': False, 'error': '無檔案記錄'}), 404
+        
+        with sqlite3.connect(DATABASE_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT original_filename, blob_name 
+                FROM uploaded_files 
+                WHERE file_id = ? AND user_id = ?
+            """, (file_id, user_id))
+            
+            result = cursor.fetchone()
+            if not result:
+                return jsonify({'success': False, 'error': '檔案不存在或無權限'}), 404
+            
+            original_filename, blob_name = result
+        
+        if is_cloud_environment() and bucket is not None:
+            # 雲端環境：從 Cloud Storage 生成簽署 URL
+            blob = bucket.blob(blob_name)
+            
+            # 生成 1 小時有效的簽署 URL
+            url = blob.generate_signed_url(
+                version="v4",
+                expiration=timedelta(hours=1),
+                method="GET"
+            )
+            
+            return jsonify({
+                'success': True,
+                'download_url': url,
+                'filename': original_filename
+            }), 200
+        else:
+            # 本地環境：檢查檔案是否存在於 uploads 目錄
+            local_path = os.path.join(app.config['UPLOAD_FOLDER'], original_filename)
+            if os.path.exists(local_path):
+                return send_from_directory(app.config['UPLOAD_FOLDER'], original_filename)
+            else:
+                return jsonify({'success': False, 'error': '檔案不存在'}), 404
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/files/<file_id>', methods=['DELETE'])
+@jwt_required()
+def delete_file(file_id):
+    """刪除檔案"""
+    try:
+        user_id = get_jwt_identity()
+        
+        # 檢查檔案是否存在且屬於當前用戶
+        inspector = inspect(engine)
+        if not inspector.has_table('uploaded_files'):
+            return jsonify({'success': False, 'error': '無檔案記錄'}), 404
+        
+        with sqlite3.connect(DATABASE_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT original_filename, blob_name, table_name
+                FROM uploaded_files 
+                WHERE file_id = ? AND user_id = ?
+            """, (file_id, user_id))
+            
+            result = cursor.fetchone()
+            if not result:
+                return jsonify({'success': False, 'error': '檔案不存在或無權限'}), 404
+            
+            original_filename, blob_name, table_name = result
+            
+            # 刪除 Cloud Storage 中的檔案（如果在雲端環境）
+            if is_cloud_environment() and bucket is not None and blob_name:
+                try:
+                    blob = bucket.blob(blob_name)
+                    blob.delete()
+                except Exception as e:
+                    print(f"[WARNING] Cloud Storage 檔案刪除失敗: {e}")
+            
+            # 刪除本地檔案（如果在本地環境）
+            if not is_cloud_environment():
+                local_path = os.path.join(app.config['UPLOAD_FOLDER'], original_filename)
+                if os.path.exists(local_path):
+                    try:
+                        os.remove(local_path)
+                    except Exception as e:
+                        print(f"[WARNING] 本地檔案刪除失敗: {e}")
+            
+            # 刪除資料庫記錄
+            cursor.execute("DELETE FROM uploaded_files WHERE file_id = ? AND user_id = ?", (file_id, user_id))
+            
+            # 可選：刪除對應的資料表
+            if table_name:
+                try:
+                    session = Session()
+                    session.execute(text(f'DROP TABLE IF EXISTS "{table_name}"'))
+                    session.commit()
+                    session.close()
+                except Exception as e:
+                    print(f"[WARNING] 資料表刪除失敗: {e}")
+            
+            conn.commit()
+        
+        return jsonify({'success': True, 'message': '檔案已刪除'}), 200
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 if __name__ == '__main__':
