@@ -264,56 +264,12 @@ app.config['DATABASE_FOLDER'] = 'database'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['DATABASE_FOLDER'], exist_ok=True)
 
-# === 動態資料庫配置 ===
+# === 資料庫配置 ===
 def get_database_url():
-    """
-    根據環境變數動態返回資料庫連接 URL
-    - USE_CLOUD_SQL=true：使用 Cloud SQL (PostgreSQL)
-    - USE_CLOUD_SQL=false 或未設定：使用 SQLite
-    """
-    # 檢查是否要使用 Cloud SQL（新增開關）
-    use_cloud_sql = os.getenv('USE_CLOUD_SQL', 'false').lower() == 'true'
-    
-    if use_cloud_sql:
-        # 檢查 Cloud SQL 環境變數
-        cloud_sql_connection = os.getenv('CLOUD_SQL_CONNECTION_NAME')
-        db_user = os.getenv('DB_USER')
-        db_pass = os.getenv('DB_PASSWORD')
-        db_name = os.getenv('DB_NAME')
-        
-        if not all([cloud_sql_connection, db_user, db_name]):
-            print("[ERROR] USE_CLOUD_SQL=true 但缺少必要的環境變數")
-            print("[INFO] 切換回 SQLite")
-            db_path = os.path.join(app.config['DATABASE_FOLDER'], 'excel_data.db')
-            return f'sqlite:///{db_path}'
-        
-        # 雲端環境：使用 Cloud SQL
-        print(f"[INFO] 使用 Cloud SQL: {cloud_sql_connection}")
-        
-        # 檢查是否在 Cloud Run 環境（Linux，支援 Unix Socket）
-        db_socket_dir = os.getenv('DB_SOCKET_DIR')
-        
-        if db_socket_dir:
-            # Cloud Run: 使用 Unix socket 連接
-            unix_socket = f'{db_socket_dir}/{cloud_sql_connection}'
-            return f'postgresql+pg8000://{db_user}:{db_pass}@/{db_name}?unix_sock={unix_socket}'
-        else:
-            # 本地 Windows: 使用 TCP/IP 連接（需要授權 IP 或使用 Cloud SQL Proxy）
-            db_host = os.getenv('DB_HOST')
-            
-            if not db_host:
-                print("[ERROR] 本地連接 Cloud SQL 需要設定 DB_HOST 環境變數")
-                print("[INFO] 切換回 SQLite")
-                db_path = os.path.join(app.config['DATABASE_FOLDER'], 'excel_data.db')
-                return f'sqlite:///{db_path}'
-            
-            db_port = os.getenv('DB_PORT', '5432')
-            return f'postgresql+pg8000://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}'
-    else:
-        # 本地環境：使用 SQLite
-        print("[INFO] 使用本地 SQLite 資料庫")
-        db_path = os.path.join(app.config['DATABASE_FOLDER'], 'excel_data.db')
-        return f'sqlite:///{db_path}'
+    """使用 SQLite 資料庫"""
+    print("[INFO] 使用本地 SQLite 資料庫")
+    db_path = os.path.join(app.config['DATABASE_FOLDER'], 'excel_data.db')
+    return f'sqlite:///{db_path}'
 
 DATABASE_URL = get_database_url()
 DATABASE_PATH = os.path.join(app.config['DATABASE_FOLDER'], 'excel_data.db')  # SQLite 路徑（本地用）

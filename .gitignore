@@ -44,33 +44,35 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# 私人學習筆記 (不應上傳到 Git)
+# 私人學習筆記和文檔 (不應上傳到 Git)
 專案架構說明.md
-
-# 雲端部署指南 (包含敏感資訊，不應上傳)
-雲端部署指南-GCP版本.md
-雲端部署指南-簡易版本.md
-GCP快速開始指南.md
-部署進度記錄.md
-
-# 雲端部署相關檔案 (本地不需要)
-backend/requirements-cloud.txt
-backend/cloud-compatibility-example.py
-backend/本地與雲端環境說明.md
-backend/環境自動切換範例.py
-
-# 前端環境相關檔案 (自動生成或測試用)
-frontend/scripts/
-frontend/scripts/*.js
-
-# 學習和開發文檔 (個人筆記)
-技術學習指南/
 CodeReview報告.md
 CONFIG.md
 學習大綱與程式碼介紹.md
 簡報重點摘要.md
+檢查資料庫.md
+
+# 技術學習指南資料夾
+技術學習指南/
+
+# 雲端部署指南 (包含敏感資訊或過時資訊)
+雲端部署指南-GCP版本.md
+雲端部署指南-簡易版本.md
+GCP快速開始指南.md
+部署進度記錄.md
+CLOUD_SQL_IMPLEMENTATION.md
+Cloud_SQL_Setup_Guide.md
+
+# 測試和檢查腳本
+check_cloudsql.py
+check_columns.py
+
+# 雲端部署相關檔案
+backend/本地與雲端環境說明.md
+
+# 前端測試腳本
+frontend/scripts/
 
 # 開發工具腳本
 start_servers.bat
 start_simple.bat
-check_columns.py
