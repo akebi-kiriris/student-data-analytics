@@ -157,7 +157,7 @@ const updateTime = () => {
 const loadUserInfo = () => {
   const user = authService.getCurrentUser()
   if (user) {
-    currentUser.value = user.name
+    currentUser.value = user.username
   }
 }
 

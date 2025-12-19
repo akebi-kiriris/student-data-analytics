@@ -12,11 +12,7 @@ import AnalysisView from '../views/AnalysisView.vue'
 const routes = [
   {
     path: '/',
-    name: 'Home',
-    component: () => import('../App.vue'),
-    meta: {
-      title: '數據分析 - 學生資料分析系統'
-    }
+    redirect: '/dashboard'
   },
   {
     path: '/login',
