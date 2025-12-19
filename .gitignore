@@ -44,16 +44,8 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# Learning materials and documentation
-CONFIG.md
+# Learning materials (private)
 CodeReview報告.md
-學習大綱與程式碼介紹.md
-簡報重點摘要.md
-專案架構說明.md
-部署進度記錄.md
-雲端部署指南-*.md
-GCP快速開始指南.md
-技術學習指南/
 
 # 私人學習筆記和文檔 (不應上傳到 Git)
 專案架構說明.md
