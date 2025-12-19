@@ -241,6 +241,8 @@ def is_cloud_environment():
     """檢測是否為雲端環境"""
     return os.getenv('GOOGLE_CLOUD_PROJECT') is not None and CLOUD_STORAGE_AVAILABLE
 
+IS_PRODUCTION = is_cloud_environment()
+
 # 初始化 Cloud Storage（僅在雲端環境）
 storage_client = None
 bucket = None
@@ -271,8 +273,55 @@ def get_database_url():
     db_path = os.path.join(app.config['DATABASE_FOLDER'], 'excel_data.db')
     return f'sqlite:///{db_path}'
 
+# 從 Cloud Storage 下載資料庫（如果存在）
+def download_database_from_gcs():
+    """啟動時從 Cloud Storage 下載資料庫"""
+    if not IS_PRODUCTION or not CLOUD_STORAGE_AVAILABLE or storage_client is None:
+        print("[INFO] 跳過資料庫下載（本地環境或 Storage 不可用）")
+        return
+    
+    try:
+        db_bucket_name = os.getenv('GCS_DB_BUCKET', 'student-analytics-db-backup')
+        db_bucket = storage_client.bucket(db_bucket_name)
+        blob = db_bucket.blob('excel_data.db')
+        
+        if blob.exists():
+            db_path = os.path.join(app.config['DATABASE_FOLDER'], 'excel_data.db')
+            blob.download_to_filename(db_path)
+            print(f"[INFO] ✓ 從 gs://{db_bucket_name}/excel_data.db 下載資料庫成功")
+        else:
+            print(f"[INFO] Cloud Storage 中無備份資料庫，將建立新資料庫")
+    except Exception as e:
+        print(f"[WARNING] 資料庫下載失敗: {e}，將使用空資料庫")
+
+# 上傳資料庫到 Cloud Storage
+def backup_database_to_gcs():
+    """備份資料庫到 Cloud Storage"""
+    if not IS_PRODUCTION or not CLOUD_STORAGE_AVAILABLE or storage_client is None:
+        return {"success": False, "message": "非生產環境或 Storage 不可用"}
+    
+    try:
+        db_path = os.path.join(app.config['DATABASE_FOLDER'], 'excel_data.db')
+        if not os.path.exists(db_path):
+            return {"success": False, "message": "資料庫檔案不存在"}
+        
+        db_bucket_name = os.getenv('GCS_DB_BUCKET', 'student-analytics-db-backup')
+        db_bucket = storage_client.bucket(db_bucket_name)
+        blob = db_bucket.blob('excel_data.db')
+        
+        blob.upload_from_filename(db_path)
+        print(f"[INFO] ✓ 資料庫已備份到 gs://{db_bucket_name}/excel_data.db")
+        return {"success": True, "message": "備份成功"}
+    except Exception as e:
+        print(f"[ERROR] 資料庫備份失敗: {e}")
+        return {"success": False, "message": str(e)}
+
 DATABASE_URL = get_database_url()
 DATABASE_PATH = os.path.join(app.config['DATABASE_FOLDER'], 'excel_data.db')  # SQLite 路徑（本地用）
+
+# 啟動時下載資料庫
+download_database_from_gcs()
+
 engine = create_engine(DATABASE_URL, echo=False)
 metadata = MetaData()
 
@@ -768,6 +817,9 @@ def process_excel_data(file, df, sheet_name, file_id=None, blob_name=None):
         
         if file_id:
             response_data["file_id"] = file_id
+        
+        # 上傳成功後自動備份資料庫
+        backup_database_to_gcs()
             
         return jsonify(response_data), 200
         
@@ -794,23 +846,24 @@ def list_database_tables_new():
         inspector = inspect(engine)
         tables = inspector.get_table_names()
         
-        # 只回傳以 excel_ 開頭的表格（排除系統表格）
-        excel_tables = [table for table in tables if table.startswith('excel_')]
+        # 只回傳屬於當前用戶的表格（表名格式：{user_id}_{sheet}_{timestamp}）
+        user_prefix = f"{current_user_id}_"
+        user_tables = [table for table in tables if table.startswith(user_prefix)]
         
-        # 解析表格名稱，提取檔名和工作表名
+        # 解析表格名稱，提取工作表名
         table_info = []
-        for table in excel_tables:
+        for table in user_tables:
             try:
-                # 格式：excel_檔名_工作表名
-                parts = table.replace('excel_', '', 1).rsplit('_', 1)
+                # 格式：{user_id}_{工作表名}_{時間戳}
+                parts = table.replace(user_prefix, '', 1).rsplit('_', 1)
                 if len(parts) == 2:
-                    filename = parts[0]
-                    sheet_name = parts[1]
+                    sheet_name = parts[0]
+                    timestamp = parts[1]
                     table_info.append({
                         'table_name': table,
-                        'display_name': f"{filename} - {sheet_name}",
-                        'filename': filename,
-                        'sheet_name': sheet_name
+                        'display_name': f"{sheet_name}",
+                        'sheet_name': sheet_name,
+                        'timestamp': timestamp
                     })
             except Exception as e:
                 # 如果解析失敗，就直接顯示表格名稱
@@ -3305,8 +3358,25 @@ def delete_file(file_id):
             
             conn.commit()
         
+        # 刪除後自動備份資料庫
+        backup_database_to_gcs()
+        
         return jsonify({'success': True, 'message': '檔案已刪除'}), 200
         
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/backup', methods=['POST'])
+@jwt_required()
+def manual_backup():
+    """手動備份資料庫到 Cloud Storage"""
+    try:
+        result = backup_database_to_gcs()
+        if result['success']:
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 500
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
