@@ -20,6 +20,13 @@ except ImportError:
     CLOUD_STORAGE_AVAILABLE = False
     storage = None
 
+# 設定資料庫路徑
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+EXCEL_DATA_DB_PATH = os.path.join(BASE_DIR, 'excel_data.db')
+FAKEDATA_DB_PATH = os.path.join(BASE_DIR, 'database', 'fakedata.db')
+
+print(f"✅ 資料庫連線路徑鎖定: EXCEL_DATA={EXCEL_DATA_DB_PATH}, FAKEDATA={FAKEDATA_DB_PATH}")
+
 
 def filter_dataframe_until_empty_row(df):
     """
@@ -270,7 +277,7 @@ os.makedirs(app.config['DATABASE_FOLDER'], exist_ok=True)
 def get_database_url():
     """使用 SQLite 資料庫"""
     print("[INFO] 使用本地 SQLite 資料庫")
-    db_path = os.path.join(app.config['DATABASE_FOLDER'], 'excel_data.db')
+    db_path = os.path.join(BASE_DIR, app.config['DATABASE_FOLDER'], 'excel_data.db')
     return f'sqlite:///{db_path}'
 
 # 從 Cloud Storage 下載資料庫（如果存在）
@@ -835,6 +842,13 @@ def process_excel_data(file, df, sheet_name, file_id=None, blob_name=None):
 @app.route('/api/database/tables', methods=['GET'])
 @jwt_required()
 def list_database_tables_new():
+    # DEBUG: 檢查 database/ 目錄內容
+    try:
+        db_files = os.listdir('database')
+        print(f"[DEBUG] database/ 目錄內容: {db_files}")
+        print(f"[DEBUG] fakedata.db 存在: {os.path.exists('database/fakedata.db')}")
+    except Exception as e:
+        print(f"[DEBUG] 無法列出 database/ 目錄: {e}")
     """
     取得資料庫中所有已存入的表格清單（新格式API）
     """
@@ -845,11 +859,11 @@ def list_database_tables_new():
         
         inspector = inspect(engine)
         tables = inspector.get_table_names()
-        
+
         # 只回傳屬於當前用戶的表格（表名格式：{user_id}_{sheet}_{timestamp}）
         user_prefix = f"{current_user_id}_"
         user_tables = [table for table in tables if table.startswith(user_prefix)]
-        
+
         # 解析表格名稱，提取工作表名
         table_info = []
         for table in user_tables:
@@ -873,7 +887,27 @@ def list_database_tables_new():
                     'filename': '',
                     'sheet_name': ''
                 })
-        
+
+        # 加入 fakedata.db 的所有表格（不重複）
+        from sqlalchemy import create_engine as _create_engine
+        try:
+            fakedata_engine = _create_engine('sqlite:///database/fakedata.db', echo=False)
+            fakedata_inspector = inspect(fakedata_engine)
+            fakedata_tables = fakedata_inspector.get_table_names()
+            for table in fakedata_tables:
+                # 避免重複
+                if not any(t['table_name'] == table for t in table_info):
+                    table_info.append({
+                        'table_name': table,
+                        'display_name': table,
+                        'sheet_name': table,
+                        'timestamp': ''
+                    })
+        except Exception as e:
+            print(f"[WARNING] inspect fakedata.db failed: {e}")
+
+        # 移除：不再手動加上 fakedata，因為上面已經從 fakedata.db 添加了所有表格
+
         return jsonify({'success': True, 'tables': table_info})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -892,19 +926,33 @@ def get_table_columns():
         if not table_name:
             return jsonify({'error': '缺少table_name參數'}), 400
         
-        # 檢查資料表是否存在
+        # 先查主資料庫（excel_data.db）
         inspector = inspect(engine)
-        if not inspector.has_table(table_name):
-            return jsonify({'error': '找不到指定的資料表'}), 404
-        
-        # 取得表格欄位資訊
-        columns_info = inspector.get_columns(table_name)
-        columns = [col['name'] for col in columns_info if col['name'] != 'id']
-        
-        return jsonify({'columns': columns})
+        if inspector.has_table(table_name):
+            columns_info = inspector.get_columns(table_name)
+            columns = [col['name'] for col in columns_info if col['name'] != 'id']
+            return jsonify({'columns': columns})
+
+        # 再查 fakedata.db
+        from sqlalchemy import create_engine as _create_engine
+        try:
+            fakedata_engine = _create_engine(f'sqlite:///{FAKEDATA_DB_PATH}', echo=False)
+            fakedata_inspector = inspect(fakedata_engine)
+            app.logger.error(f"Checking fakedata.db for table {table_name}")
+            if fakedata_inspector.has_table(table_name):
+                app.logger.error(f"Found table {table_name} in fakedata.db")
+                columns_info = fakedata_inspector.get_columns(table_name)
+                columns = [col['name'] for col in columns_info if col['name'] != 'id']
+                return jsonify({'columns': columns})
+            else:
+                app.logger.error(f"Table {table_name} not found in fakedata.db")
+        except Exception as e:
+            app.logger.error(f"[WARNING] 查詢 fakedata.db 欄位失敗: {e}")
+
+        return jsonify({'error': '找不到指定的資料表'}), 404
         
     except Exception as e:
-        print(f"Error getting table columns: {e}")
+        app.logger.error(f"Error getting table columns: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -916,11 +964,21 @@ def get_table_row_count(table_name):
     """
     try:
         inspector = inspect(engine)
-        if not inspector.has_table(table_name):
-            return jsonify({'success': False, 'error': '找不到指定的資料表'}), 404
+        is_excel_data = inspector.has_table(table_name)
+        
+        if not is_excel_data:
+            # 檢查 fakedata.db
+            from sqlalchemy import create_engine as _create_engine
+            fakedata_engine = _create_engine(f'sqlite:///{FAKEDATA_DB_PATH}', echo=False)
+            fakedata_inspector = inspect(fakedata_engine)
+            if not fakedata_inspector.has_table(table_name):
+                return jsonify({'success': False, 'error': '找不到指定的資料表'}), 404
+            current_engine = fakedata_engine
+        else:
+            current_engine = engine
         
         # 執行計數查詢
-        with engine.connect() as connection:
+        with current_engine.connect() as connection:
             result = connection.execute(text(f"SELECT COUNT(*) FROM `{table_name}`"))
             count = result.scalar()
         
@@ -940,8 +998,23 @@ def get_table_data(table_name):
     try:
         # 檢查資料表是否存在
         inspector = inspect(engine)
-        if not inspector.has_table(table_name):
-            return jsonify({'success': False, 'error': '找不到指定的資料表'}), 404
+        is_excel_data = inspector.has_table(table_name)
+        
+        if not is_excel_data:
+            # 檢查 fakedata.db
+            from sqlalchemy import create_engine as _create_engine
+            fakedata_engine = _create_engine(f'sqlite:///{FAKEDATA_DB_PATH}', echo=False)
+            fakedata_inspector = inspect(fakedata_engine)
+            if not fakedata_inspector.has_table(table_name):
+                return jsonify({'success': False, 'error': '找不到指定的資料表'}), 404
+            # 使用 fakedata
+            current_engine = fakedata_engine
+            current_inspector = fakedata_inspector
+            is_fakedata = True
+        else:
+            current_engine = engine
+            current_inspector = inspector
+            is_fakedata = False
         
         # 取得當前使用者 ID
         current_user_id = get_jwt_identity()
@@ -955,29 +1028,42 @@ def get_table_data(table_name):
         offset = (page - 1) * limit
         
         # 取得表格欄位資訊
-        columns_info = inspector.get_columns(table_name)
+        columns_info = current_inspector.get_columns(table_name)
         columns = [col['name'] for col in columns_info if col['name'] != 'id']
         
         session = Session()
         try:
-            # 構建基礎查詢（添加 user_id 過濾）
-            if search:
-                # 添加搜尋功能 - 在所有文字欄位中搜尋
-                search_conditions = []
-                for col in columns:
-                    search_conditions.append(f'`{col}` LIKE :search')
-                search_query = f"SELECT * FROM `{table_name}` WHERE user_id = :user_id AND ({' OR '.join(search_conditions)}) ORDER BY id LIMIT :limit OFFSET :offset"
-                count_query = f"SELECT COUNT(*) FROM `{table_name}` WHERE user_id = :user_id AND ({' OR '.join(search_conditions)})"
-                
-                result = session.execute(text(search_query), {'user_id': current_user_id, 'search': f'%{search}%', 'limit': limit, 'offset': offset}).fetchall()
-                total_count = session.execute(text(count_query), {'user_id': current_user_id, 'search': f'%{search}%'}).scalar()
+            # 構建基礎查詢
+            if is_fakedata:
+                # fakedata 不需要 user_id 過濾
+                if search:
+                    # 添加搜尋功能 - 在所有文字欄位中搜尋
+                    search_conditions = []
+                    for col in columns:
+                        search_conditions.append(f'`{col}` LIKE :search')
+                    search_query = f"SELECT * FROM `{table_name}` WHERE ({' OR '.join(search_conditions)}) ORDER BY id LIMIT :limit OFFSET :offset"
+                    count_query = f"SELECT COUNT(*) FROM `{table_name}` WHERE ({' OR '.join(search_conditions)})"
+                    
+                    result = session.execute(text(search_query), {'search': f'%{search}%', 'limit': limit, 'offset': offset}).fetchall()
+                    total = session.execute(text(count_query), {'search': f'%{search}%'}).scalar()
+                else:
+                    result = session.execute(text(f"SELECT * FROM `{table_name}` ORDER BY id LIMIT :limit OFFSET :offset"), {'limit': limit, 'offset': offset}).fetchall()
+                    total = session.execute(text(f"SELECT COUNT(*) FROM `{table_name}`")).scalar()
             else:
-                # 無搜尋條件
-                data_query = f"SELECT * FROM `{table_name}` WHERE user_id = :user_id ORDER BY id LIMIT :limit OFFSET :offset"
-                count_query = f"SELECT COUNT(*) FROM `{table_name}` WHERE user_id = :user_id"
-                
-                result = session.execute(text(data_query), {'user_id': current_user_id, 'limit': limit, 'offset': offset}).fetchall()
-                total_count = session.execute(text(count_query), {'user_id': current_user_id}).scalar()
+                # excel_data 需要 user_id 過濾
+                if search:
+                    # 添加搜尋功能 - 在所有文字欄位中搜尋
+                    search_conditions = []
+                    for col in columns:
+                        search_conditions.append(f'`{col}` LIKE :search')
+                    search_query = f"SELECT * FROM `{table_name}` WHERE user_id = :user_id AND ({' OR '.join(search_conditions)}) ORDER BY id LIMIT :limit OFFSET :offset"
+                    count_query = f"SELECT COUNT(*) FROM `{table_name}` WHERE user_id = :user_id AND ({' OR '.join(search_conditions)})"
+                    
+                    result = session.execute(text(search_query), {'user_id': current_user_id, 'search': f'%{search}%', 'limit': limit, 'offset': offset}).fetchall()
+                    total = session.execute(text(count_query), {'user_id': current_user_id, 'search': f'%{search}%'}).scalar()
+                else:
+                    result = session.execute(text(f"SELECT * FROM `{table_name}` WHERE user_id = :user_id ORDER BY id LIMIT :limit OFFSET :offset"), {'user_id': current_user_id, 'limit': limit, 'offset': offset}).fetchall()
+                    total = session.execute(text(f"SELECT COUNT(*) FROM `{table_name}` WHERE user_id = :user_id")).scalar()
             
             # 轉換結果為字典列表
             data = []
@@ -986,7 +1072,7 @@ def get_table_data(table_name):
                 data.append(row_dict)
             
             # 計算總頁數
-            total_pages = (total_count + limit - 1) // limit
+            total_pages = (total + limit - 1) // limit
             
             return jsonify({
                 'success': True,
@@ -995,7 +1081,7 @@ def get_table_data(table_name):
                 'pagination': {
                     'current_page': page,
                     'total_pages': total_pages,
-                    'total_count': total_count,
+                    'total_count': total,
                     'limit': limit,
                     'has_next': page < total_pages,
                     'has_prev': page > 1
@@ -1287,17 +1373,30 @@ def column_stats():
             
         # 檢查資料表是否存在
         inspector = inspect(engine)
-        if not inspector.has_table(table_name):
-            return jsonify({'error': '找不到指定的資料表'}), 404
+        is_excel_data = inspector.has_table(table_name)
+        
+        if not is_excel_data:
+            # 檢查 fakedata.db
+            from sqlalchemy import create_engine as _create_engine
+            fakedata_engine = _create_engine(f'sqlite:///{FAKEDATA_DB_PATH}', echo=False)
+            fakedata_inspector = inspect(fakedata_engine)
+            if not fakedata_inspector.has_table(table_name):
+                return jsonify({'error': '找不到指定的資料表'}), 404
+            current_engine = fakedata_engine
+            current_inspector = fakedata_inspector
+        else:
+            current_engine = engine
+            current_inspector = inspector
             
         # 從資料庫讀取資料
-        session = Session()
+        SessionLocal = sessionmaker(bind=current_engine)
+        session = SessionLocal()
         try:
             # 安全的欄位名稱
             safe_column = column.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
             
             # 檢查欄位是否存在
-            columns_info = inspector.get_columns(table_name)
+            columns_info = current_inspector.get_columns(table_name)
             available_columns = [col['name'] for col in columns_info]
             
             if safe_column not in available_columns:
@@ -1367,11 +1466,23 @@ def multi_subject_stats():
             
         # 檢查資料表是否存在
         inspector = inspect(engine)
-        if not inspector.has_table(table_name):
-            return jsonify({'error': '找不到指定的資料表'}), 404
+        is_excel_data = inspector.has_table(table_name)
+        
+        if not is_excel_data:
+            # 檢查 fakedata.db
+            from sqlalchemy import create_engine as _create_engine
+            fakedata_engine = _create_engine(f'sqlite:///{FAKEDATA_DB_PATH}', echo=False)
+            fakedata_inspector = inspect(fakedata_engine)
+            if not fakedata_inspector.has_table(table_name):
+                return jsonify({'error': '找不到指定的資料表'}), 404
+            current_engine = fakedata_engine
+            current_inspector = fakedata_inspector
+        else:
+            current_engine = engine
+            current_inspector = inspector
             
         # 取得欄位清單並轉換為安全名稱
-        columns_info = inspector.get_columns(table_name)
+        columns_info = current_inspector.get_columns(table_name)
         available_columns = [col['name'] for col in columns_info]
         
         safe_year_col = year_col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
@@ -1386,7 +1497,8 @@ def multi_subject_stats():
                 return jsonify({'error': f'找不到科目欄位: {subjects[i]}'}), 400
         
         # 從資料庫讀取資料
-        session = Session()
+        SessionLocal = sessionmaker(bind=current_engine)
+        session = SessionLocal()
         try:
             # 構建查詢語句
             columns_str = f'"{safe_year_col}", ' + ', '.join([f'"{subj}"' for subj in safe_subjects])
@@ -1449,14 +1561,26 @@ def yearly_admission_stats():
 
         # 檢查資料表是否存在
         inspector = inspect(engine)
-        if not inspector.has_table(table_name):
-            return jsonify({'error': '找不到指定的資料表'}), 404
+        is_excel_data = inspector.has_table(table_name)
+        
+        if not is_excel_data:
+            # 檢查 fakedata.db
+            from sqlalchemy import create_engine as _create_engine
+            fakedata_engine = _create_engine(f'sqlite:///{FAKEDATA_DB_PATH}', echo=False)
+            fakedata_inspector = inspect(fakedata_engine)
+            if not fakedata_inspector.has_table(table_name):
+                return jsonify({'error': '找不到指定的資料表'}), 404
+            current_engine = fakedata_engine
+            current_inspector = fakedata_inspector
+        else:
+            current_engine = engine
+            current_inspector = inspector
 
         # 轉換為安全欄位名稱
         safe_year_col = year_col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
         
         # 檢查欄位是否存在
-        columns_info = inspector.get_columns(table_name)
+        columns_info = current_inspector.get_columns(table_name)
         available_columns = [col['name'] for col in columns_info]
         
         if safe_year_col not in available_columns:
@@ -1470,7 +1594,8 @@ def yearly_admission_stats():
                 has_gender = True
 
         # 從資料庫讀取資料
-        session = Session()
+        SessionLocal = sessionmaker(bind=current_engine)
+        session = SessionLocal()
         try:
             if has_gender:
                 query = text(f'SELECT "{safe_year_col}", "{safe_gender_col}" FROM "{table_name}" WHERE "{safe_year_col}" IS NOT NULL AND "{safe_year_col}" != ""')
@@ -1560,7 +1685,7 @@ def school_source_stats():
     從資料庫統計每年入學生的學校來源類型分布
     """
     try:
-        data = request.json
+        data = request.get_json()
         table_name = data.get('table_name')
         year_col = data.get('year_col')
         school_col = data.get('school_col')  # 學校名稱欄位
@@ -1570,15 +1695,27 @@ def school_source_stats():
         
         # 檢查資料表是否存在
         inspector = inspect(engine)
-        if not inspector.has_table(table_name):
-            return jsonify({'error': '找不到指定的資料表'}), 404
+        is_excel_data = inspector.has_table(table_name)
+        
+        if not is_excel_data:
+            # 檢查 fakedata.db
+            from sqlalchemy import create_engine as _create_engine
+            fakedata_engine = _create_engine(f'sqlite:///{FAKEDATA_DB_PATH}', echo=False)
+            fakedata_inspector = inspect(fakedata_engine)
+            if not fakedata_inspector.has_table(table_name):
+                return jsonify({'error': '找不到指定的資料表'}), 404
+            current_engine = fakedata_engine
+            current_inspector = fakedata_inspector
+        else:
+            current_engine = engine
+            current_inspector = inspector
         
         # 轉換為安全欄位名稱
         safe_year_col = year_col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
         safe_school_col = school_col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
         
         # 檢查欄位是否存在
-        columns_info = inspector.get_columns(table_name)
+        columns_info = current_inspector.get_columns(table_name)
         available_columns = [col['name'] for col in columns_info]
         
         if safe_year_col not in available_columns:
@@ -1587,7 +1724,8 @@ def school_source_stats():
             return jsonify({'error': f'找不到學校欄位: {school_col}'}), 400
         
         # 從資料庫讀取資料
-        session = Session()
+        SessionLocal = sessionmaker(bind=current_engine)
+        session = SessionLocal()
         try:
             query = text(f'SELECT "{safe_year_col}", "{safe_school_col}" FROM "{table_name}" WHERE "{safe_year_col}" IS NOT NULL AND "{safe_year_col}" != ""')
             result = session.execute(query).fetchall()
@@ -1687,15 +1825,27 @@ def admission_method_stats():
         
         # 檢查資料表是否存在
         inspector = inspect(engine)
-        if not inspector.has_table(table_name):
-            return jsonify({'error': '找不到指定的資料表'}), 404
+        is_excel_data = inspector.has_table(table_name)
+        
+        if not is_excel_data:
+            # 檢查 fakedata.db
+            from sqlalchemy import create_engine as _create_engine
+            fakedata_engine = _create_engine(f'sqlite:///{FAKEDATA_DB_PATH}', echo=False)
+            fakedata_inspector = inspect(fakedata_engine)
+            if not fakedata_inspector.has_table(table_name):
+                return jsonify({'error': '找不到指定的資料表'}), 404
+            current_engine = fakedata_engine
+            current_inspector = fakedata_inspector
+        else:
+            current_engine = engine
+            current_inspector = inspector
         
         # 轉換為安全欄位名稱
         safe_year_col = year_col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
         safe_method_col = method_col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
         
         # 檢查欄位是否存在
-        columns_info = inspector.get_columns(table_name)
+        columns_info = current_inspector.get_columns(table_name)
         available_columns = [col['name'] for col in columns_info]
         
         if safe_year_col not in available_columns:
@@ -1704,7 +1854,8 @@ def admission_method_stats():
             return jsonify({'error': f'找不到入學管道欄位: {method_col}'}), 400
         
         # 從資料庫讀取資料
-        session = Session()
+        SessionLocal = sessionmaker(bind=current_engine)
+        session = SessionLocal()
         try:
             query = text(f'SELECT "{safe_year_col}", "{safe_method_col}" FROM "{table_name}" WHERE "{safe_year_col}" IS NOT NULL AND "{safe_year_col}" != ""')
             result = session.execute(query).fetchall()
@@ -1838,15 +1989,27 @@ def geographic_stats():
 
         # 檢查資料表是否存在
         inspector = inspect(engine)
-        if not inspector.has_table(table_name):
-            return jsonify({'error': '找不到指定的資料表'}), 404
+        is_excel_data = inspector.has_table(table_name)
+        
+        if not is_excel_data:
+            # 檢查 fakedata.db
+            from sqlalchemy import create_engine as _create_engine
+            fakedata_engine = _create_engine(f'sqlite:///{FAKEDATA_DB_PATH}', echo=False)
+            fakedata_inspector = inspect(fakedata_engine)
+            if not fakedata_inspector.has_table(table_name):
+                return jsonify({'error': '找不到指定的資料表'}), 404
+            current_engine = fakedata_engine
+            current_inspector = fakedata_inspector
+        else:
+            current_engine = engine
+            current_inspector = inspector
 
         # 轉換為安全欄位名稱
         safe_year_col = year_col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
         safe_region_col = region_col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
 
         # 檢查欄位是否存在
-        columns_info = inspector.get_columns(table_name)
+        columns_info = current_inspector.get_columns(table_name)
         available_columns = [col['name'] for col in columns_info]
         
         if safe_year_col not in available_columns:
@@ -1855,7 +2018,8 @@ def geographic_stats():
             return jsonify({'error': f'找不到地區欄位: {region_col}'}), 400
 
         # 從資料庫讀取資料
-        session = Session()
+        SessionLocal = sessionmaker(bind=current_engine)
+        session = SessionLocal()
         try:
             query = text(f'SELECT "{safe_year_col}", "{safe_region_col}" FROM "{table_name}" WHERE "{safe_year_col}" IS NOT NULL AND "{safe_year_col}" != ""')
             result = session.execute(query).fetchall()
@@ -1992,7 +2156,23 @@ def top_schools_stats():
             else:
                 # 從資料庫讀取
                 table_name = filename.replace('.xlsx', '').replace('.xls', '')
-                df = pd.read_sql_table(table_name, engine)
+                
+                # 檢查資料表是否存在
+                inspector = inspect(engine)
+                is_excel_data = inspector.has_table(table_name)
+                
+                if not is_excel_data:
+                    # 檢查 fakedata.db
+                    from sqlalchemy import create_engine as _create_engine
+                    fakedata_engine = _create_engine(f'sqlite:///{FAKEDATA_DB_PATH}', echo=False)
+                    fakedata_inspector = inspect(fakedata_engine)
+                    if not fakedata_inspector.has_table(table_name):
+                        return jsonify({'error': '找不到指定的資料表'}), 404
+                    current_engine = fakedata_engine
+                else:
+                    current_engine = engine
+                
+                df = pd.read_sql_table(table_name, current_engine)
             
             if df.empty:
                 return jsonify({'error': '沒有找到資料'}), 400
@@ -2109,11 +2289,11 @@ def top_schools_stats():
 def subject_average_stats():
     """大一各科平均成績分析"""
     try:
-        # 初始化資料庫會話
-        Session = sessionmaker(bind=engine)
-        session = Session()
+        data = request.get_json()
+        table_name = data.get('table_name')
         
-        print(f"[subject_average_stats] 開始處理大一各科平均成績分析")
+        if not table_name:
+            return jsonify({'error': '缺少必要參數'}), 400
         
         # 定義科目欄位
         subjects = [
@@ -2122,7 +2302,30 @@ def subject_average_stats():
         ]
         
         # 從資料庫取得資料
-        table_name = 'excel_107_113大一新生來源管道與成績分析_20250525_整理後總表'
+        
+        # 檢查資料表是否存在
+        inspector = inspect(engine)
+        is_excel_data = inspector.has_table(table_name)
+        
+        if not is_excel_data:
+            # 檢查 fakedata.db
+            from sqlalchemy import create_engine as _create_engine
+            fakedata_engine = _create_engine(f'sqlite:///{FAKEDATA_DB_PATH}', echo=False)
+            fakedata_inspector = inspect(fakedata_engine)
+            if not fakedata_inspector.has_table(table_name):
+                return jsonify({'error': '找不到指定的資料表'}), 404
+            current_engine = fakedata_engine
+            current_inspector = fakedata_inspector
+        else:
+            current_engine = engine
+            current_inspector = inspector
+        
+        # 初始化資料庫會話
+        Session = sessionmaker(bind=current_engine)
+        session = Session()
+        
+        print(f"[subject_average_stats] 開始處理大一各科平均成績分析")
+        
         query = f"""
         SELECT 年度, {', '.join([f'`{subject}`' for subject in subjects])}
         FROM `{table_name}` 

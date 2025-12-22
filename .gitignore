@@ -38,6 +38,7 @@ backend/*.xls
 # Logs
 logs
 *.log
+PROJECT_IMPROVEMENT_TODO.md
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

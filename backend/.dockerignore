@@ -36,8 +36,8 @@ check_*.py
 
 # Large data files (will be uploaded dynamically)
 uploads/*.xlsx
+uploads/*.xlsx
 uploads/*.xls
-database/*.db
-
+# database/*.db
 # Documentation
 *.md

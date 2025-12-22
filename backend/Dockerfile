@@ -16,8 +16,15 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements-cloud.txt && \
     rm -f requirements-cloud.txt
 
-# 複製應用程式碼
+
+# 複製應用程式碼與資料庫
 COPY app.py ./
+
+# 複製資料庫目錄
+COPY database/ ./database/
+
+# build 時顯示 database/ 內容
+RUN ls -l ./database || true
 
 # 建立必要的目錄並設定權限
 RUN mkdir -p uploads database

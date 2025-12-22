@@ -466,7 +466,7 @@
           <el-button type="success" @click="getSubjectAverageStats">分析大一各科平均成績</el-button>
         </div>
         <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
-          <strong>說明：</strong>分析107-113年度大一各科目（會計學、計算機概論、微積分、基礎程式設計、統計1、經濟學、程式設計、管理學、統計2）的平均成績趨勢。
+          <strong>說明：</strong>分析107-113年度大一各科目的平均成績趨勢。
         </div>
       </div>
 
