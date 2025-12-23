@@ -247,6 +247,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { authService } from '../services/auth.js'
 import { simpleApiService, SIMPLE_API_ENDPOINTS } from '../services/api-simple.js'
+import { apiService } from '../services/api.js'
 
 const router = useRouter()
 

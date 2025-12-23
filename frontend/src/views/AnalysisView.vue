@@ -5140,8 +5140,12 @@ const renderAdmissionSubjectChart = () => {
     const series = []
     
     if (data.subjects && data.years && data.admission_methods) {
-      // 過濾掉空的年份
-      const validYears = data.years.filter(year => year && year.trim() !== '')
+      // 過濾掉空的年份 - 處理數字和字串類型
+      const validYears = data.years.filter(year => {
+        if (year === null || year === undefined) return false
+        const strYear = String(year).trim()
+        return strYear !== ''
+      })
       
       // 橫軸為年度
       categories.push(...validYears)
@@ -5403,8 +5407,12 @@ const renderSchoolTypeSubjectChart = () => {
     const series = []
     
     if (data.subjects && data.years && data.school_types) {
-      // 過濾掉空的年份
-      const validYears = data.years.filter(year => year && year.trim() !== '')
+      // 過濾掉空的年份 - 處理數字和字串類型
+      const validYears = data.years.filter(year => {
+        if (year === null || year === undefined) return false
+        const strYear = String(year).trim()
+        return strYear !== ''
+      })
       
       // 橫軸為年度
       categories.push(...validYears)
@@ -5664,8 +5672,12 @@ const renderRegionSubjectChart = () => {
     const series = []
     
     if (data.subjects && data.years && data.regions) {
-      // 過濾掉空的年份
-      const validYears = data.years.filter(year => year && year.trim() !== '')
+      // 過濾掉空的年份 - 處理數字和字串類型
+      const validYears = data.years.filter(year => {
+        if (year === null || year === undefined) return false
+        const strYear = String(year).trim()
+        return strYear !== ''
+      })
       
       // 橫軸為年度
       categories.push(...validYears)
