@@ -13,6 +13,10 @@ backend/venv/
 backend/ENV/
 backend/.env
 
+# Backend 新增的 markdown 文件（不要 push）
+backend/API資料處理統一化說明.md
+backend/修改總結.md
+
 # Database files
 backend/database/
 *.db

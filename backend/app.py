@@ -2079,90 +2079,100 @@ def geographic_stats():
 @app.route('/api/top_schools_stats', methods=['POST'])
 @jwt_required()
 def top_schools_stats():
-    """前20大入學高中統計"""
+    """前20大入學高中統計 - 使用統一的資料處理方式"""
     try:
         data = request.get_json()
         
         # 基本參數
-        filename = data.get('filename')
-        sheet = data.get('sheet', '')
+        table_name = data.get('table_name')
         school_col = data.get('school_col')
         year_col = data.get('year_col')  # 可選
         
-        if not filename or not school_col:
-            return jsonify({'error': '檔案名稱和學校欄位為必要參數'}), 400
+        if not table_name or not school_col:
+            return jsonify({'error': '資料表名稱和學校欄位為必要參數'}), 400
         
         print(f"[top_schools_stats] 開始分析前20大入學高中")
-        print(f"[top_schools_stats] filename: {filename}, sheet: {sheet}")
+        print(f"[top_schools_stats] table_name: {table_name}")
         print(f"[top_schools_stats] school_col: {school_col}, year_col: {year_col}")
         
-        # 使用全域資料庫連接
-        session = Session()
+        # 使用統一的資料庫引擎獲取方法
+        try:
+            current_engine, current_inspector = get_database_engine(table_name)
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 404
+        
+        # 檢查欄位是否存在
+        columns_info = current_inspector.get_columns(table_name)
+        available_columns = [col['name'] for col in columns_info]
+        
+        # 安全化欄位名稱
+        safe_school_col = school_col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
+        
+        if safe_school_col not in available_columns:
+            return jsonify({'error': f'找不到學校欄位: {school_col}'}), 400
+        
+        safe_year_col = None
+        if year_col:
+            safe_year_col = year_col.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '')
+            if safe_year_col not in available_columns:
+                return jsonify({'error': f'找不到年份欄位: {year_col}'}), 400
+        
+        # 建立資料庫會話
+        SessionLocal = sessionmaker(bind=current_engine)
+        session = SessionLocal()
         
         try:
-            # 讀取資料
-            if sheet:
-                # 從檔案讀取
-                df = pd.read_excel(f'uploads/{filename}', sheet_name=sheet)
-                df = filter_dataframe_until_empty_row(df)
+            # 構建查詢語句
+            if safe_year_col:
+                select_cols = f'"{safe_school_col}", "{safe_year_col}"'
+                query = text(f'SELECT {select_cols} FROM "{table_name}" WHERE "{safe_school_col}" IS NOT NULL AND "{safe_school_col}" != "" AND "{safe_year_col}" IS NOT NULL AND "{safe_year_col}" != ""')
+                result = session.execute(query).fetchall()
+                df = pd.DataFrame(result, columns=[safe_school_col, safe_year_col])
             else:
-                # 從資料庫讀取
-                table_name = filename.replace('.xlsx', '').replace('.xls', '')
-                
-                try:
-                    current_engine, current_inspector = get_database_engine(table_name)
-                except ValueError as e:
-                    return jsonify({'error': str(e)}), 404
-                
-                df = pd.read_sql_table(table_name, current_engine)
+                query = text(f'SELECT "{safe_school_col}" FROM "{table_name}" WHERE "{safe_school_col}" IS NOT NULL AND "{safe_school_col}" != ""')
+                result = session.execute(query).fetchall()
+                df = pd.DataFrame(result, columns=[safe_school_col])
             
             if df.empty:
                 return jsonify({'error': '沒有找到資料'}), 400
             
             print(f"[top_schools_stats] 資料讀取完成，共 {len(df)} 筆記錄")
             
-            # 檢查欄位是否存在
-            if school_col not in df.columns:
-                return jsonify({'error': f'找不到學校欄位: {school_col}'}), 400
-            
-            if year_col and year_col not in df.columns:
-                return jsonify({'error': f'找不到年份欄位: {year_col}'}), 400
-            
             # 清理學校名稱資料
-            df[school_col] = df[school_col].fillna('未知')
-            df[school_col] = df[school_col].astype(str).str.strip()
+            df[safe_school_col] = df[safe_school_col].fillna('未知')
+            df[safe_school_col] = df[safe_school_col].astype(str).str.strip()
             
             # 過濾掉無效的學校名稱
-            df = df[df[school_col] != '']
-            df = df[df[school_col] != '未知']
-            df = df[df[school_col] != 'nan']
+            df = df[df[safe_school_col] != '']
+            df = df[df[safe_school_col] != '未知']
+            df = df[df[safe_school_col] != 'nan']
             
-            result = {}
+            result_data = {}
             
-            if year_col:
+            if safe_year_col:
                 # 按年份分析
-                df[year_col] = pd.to_numeric(df[year_col], errors='coerce')
-                df = df.dropna(subset=[year_col])
+                df[safe_year_col] = pd.to_numeric(df[safe_year_col], errors='coerce')
+                df = df.dropna(subset=[safe_year_col])
                 
                 # 按學校和年份統計
-                yearly_stats = df.groupby([school_col, year_col]).size().reset_index(name='count')
+                yearly_stats = df.groupby([safe_school_col, safe_year_col]).size().reset_index(name='count')
                 
                 # 計算每個學校的總人數
-                school_totals = yearly_stats.groupby(school_col)['count'].sum().reset_index()
+                school_totals = yearly_stats.groupby(safe_school_col)['count'].sum().reset_index()
                 school_totals = school_totals.sort_values('count', ascending=False)
                 
                 # 取前20大學校
                 top20_schools = school_totals.head(20)
                 
                 # 獲取年份列表
-                years = sorted(df[year_col].unique())
+                years = sorted(df[safe_year_col].unique())
                 
                 # 為每個學校添加年度詳細資料
                 schools_data = []
                 total_students = df.shape[0]
                 
                 for idx, (_, row) in enumerate(top20_schools.iterrows()):
-                    school_name = row[school_col]
+                    school_name = row[safe_school_col]
                     total_count = row['count']
                     
                     school_data = {
@@ -2175,14 +2185,14 @@ def top_schools_stats():
                     # 添加每年的詳細數據
                     for year in years:
                         year_count = yearly_stats[
-                            (yearly_stats[school_col] == school_name) & 
-                            (yearly_stats[year_col] == year)
+                            (yearly_stats[safe_school_col] == school_name) & 
+                            (yearly_stats[safe_year_col] == year)
                         ]['count'].sum()
                         school_data[f'year_{int(year)}'] = int(year_count)
                     
                     schools_data.append(school_data)
                 
-                result = {
+                result_data = {
                     'schools': schools_data,
                     'total_students': int(total_students),
                     'by_year': True,
@@ -2191,8 +2201,8 @@ def top_schools_stats():
                 
             else:
                 # 不按年份分析
-                school_counts = df[school_col].value_counts().reset_index()
-                school_counts.columns = [school_col, 'count']
+                school_counts = df[safe_school_col].value_counts().reset_index()
+                school_counts.columns = [safe_school_col, 'count']
                 
                 # 取前20大學校
                 top20_schools = school_counts.head(20)
@@ -2204,19 +2214,19 @@ def top_schools_stats():
                 for idx, (_, row) in enumerate(top20_schools.iterrows()):
                     schools_data.append({
                         'rank': idx + 1,
-                        'school_name': row[school_col],
+                        'school_name': row[safe_school_col],
                         'total_count': int(row['count']),
                         'percentage': round((row['count'] / total_students) * 100, 2)
                     })
                 
-                result = {
+                result_data = {
                     'schools': schools_data,
                     'total_students': int(total_students),
                     'by_year': False
                 }
             
             print(f"[top_schools_stats] 分析完成，前20大學校數據已生成")
-            return jsonify(result)
+            return jsonify(result_data)
             
         finally:
             session.close()
@@ -2229,7 +2239,7 @@ def top_schools_stats():
 @app.route('/api/subject_average_stats', methods=['POST'])
 @jwt_required()
 def subject_average_stats():
-    """大一各科平均成績分析"""
+    """大一各科平均成績分析 - 使用統一的資料處理方式"""
     try:
         data = request.get_json()
         table_name = data.get('table_name')
@@ -2243,58 +2253,55 @@ def subject_average_stats():
             '統計1', '經濟學', '程式設計', '管理學', '統計2'
         ]
         
-        # 從資料庫取得資料
-        
-        # 檢查資料表是否存在
+        # 使用統一的資料庫引擎獲取方法
         try:
             current_engine, current_inspector = get_database_engine(table_name)
         except ValueError as e:
             return jsonify({'error': str(e)}), 404
         
+        # 檢查欄位是否存在
+        columns_info = current_inspector.get_columns(table_name)
+        available_columns = [col['name'] for col in columns_info]
+        
+        # 檢查必要欄位
+        required_columns = ['年度', '性別', '高中別', '入學管道'] + subjects
+        missing_columns = [col for col in required_columns if col not in available_columns]
+        
+        if missing_columns:
+            print(f"[subject_average_stats] 警告: 缺少欄位 {missing_columns}")
+            # 只保留存在的科目
+            subjects = [subj for subj in subjects if subj in available_columns]
+            if not subjects:
+                return jsonify({'error': '找不到任何科目欄位'}), 400
+        
         # 初始化資料庫會話
-        Session = sessionmaker(bind=current_engine)
-        session = Session()
+        SessionLocal = sessionmaker(bind=current_engine)
+        session = SessionLocal()
         
         print(f"[subject_average_stats] 開始處理大一各科平均成績分析")
+        print(f"[subject_average_stats] 可用科目: {subjects}")
         
-        query = f"""
-        SELECT 年度, {', '.join([f'`{subject}`' for subject in subjects])}
-        FROM `{table_name}` 
-        WHERE 年度 IS NOT NULL
-        """
+        # 構建查詢語句 - 使用統一的 text() 方法
+        select_cols = ['"年度"', '"性別"', '"高中別"', '"入學管道"'] + [f'"{subject}"' for subject in subjects]
+        query = text(f"""
+        SELECT {', '.join(select_cols)}
+        FROM "{table_name}" 
+        WHERE "年度" IS NOT NULL AND "年度" != ""
+        """)
         
         try:
-            df = pd.read_sql_query(query, session.bind)
-            print(f"[subject_average_stats] 成功讀取 {len(df)} 筆資料")
+            result = session.execute(query).fetchall()
+            column_names = ['年度', '性別', '高中別', '入學管道'] + subjects
+            complete_df = pd.DataFrame(result, columns=column_names)
+            print(f"[subject_average_stats] 成功讀取 {len(complete_df)} 筆資料")
         except Exception as e:
             print(f"[subject_average_stats] 資料庫讀取失敗: {str(e)}")
             return jsonify({'error': f'資料庫讀取失敗: {str(e)}'}), 500
         
-        if df.empty:
+        if complete_df.empty:
             return jsonify({'error': '沒有找到相關資料'}), 404
         
-        # 處理年度欄位，確保為數字
-        df['年度'] = pd.to_numeric(df['年度'], errors='coerce')
-        df = df.dropna(subset=['年度'])
-        
-        # 將科目成績轉為數字，並處理無效值
-        for subject in subjects:
-            df[subject] = pd.to_numeric(df[subject], errors='coerce')
-        
-        # 獲取完整資料包含性別、高中別、入學管道
-        complete_query = f"""
-        SELECT 年度, 性別, 高中別, 入學管道, {', '.join([f'`{subject}`' for subject in subjects])}
-        FROM `{table_name}` 
-        WHERE 年度 IS NOT NULL
-        """
-        
-        try:
-            complete_df = pd.read_sql_query(complete_query, session.bind)
-            print(f"[subject_average_stats] 成功讀取完整資料 {len(complete_df)} 筆")
-        except Exception as e:
-            print(f"[subject_average_stats] 完整資料讀取失敗: {str(e)}")
-            complete_df = df  # 使用原始資料作為備用
-        
+        # 資料清理和轉換
         # 處理年度欄位，確保為數字
         complete_df['年度'] = pd.to_numeric(complete_df['年度'], errors='coerce')
         complete_df = complete_df.dropna(subset=['年度'])
@@ -2387,7 +2394,7 @@ def subject_average_stats():
         # 計算整體統計
         overall_stats = {}
         for subject in subjects:
-            valid_scores = df[subject].dropna()
+            valid_scores = complete_df[subject].dropna()
             if len(valid_scores) > 0:
                 overall_stats[subject] = {
                     'overall_average': round(valid_scores.mean(), 2),
