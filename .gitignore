@@ -50,6 +50,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 # Learning materials (private)
+docs/private/
 CodeReview報告.md
 學習大綱與程式碼介紹.md
 簡報重點摘要.md

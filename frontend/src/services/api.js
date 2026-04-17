@@ -1,15 +1,10 @@
 // API服務 - 統一處理HTTP請求
 import { authService } from './auth.js'
-import { API_BASE_URL, getEnvironmentInfo } from './api-config.js'
-
-const environmentInfo = getEnvironmentInfo()
+import { API_BASE_URL } from './api-config.js'
 
 // 創建一個通用的fetch包裝器
 async function apiRequest(url, options = {}) {
   const token = authService.getToken()
-  console.log('API請求URL:', `${API_BASE_URL}${url}`)
-  console.log('當前環境:', environmentInfo.environment)
-  console.log('Token:', token ? `${token.substring(0, 20)}...` : 'null')
   
   // 設置默認headers
   const headers = {
@@ -20,9 +15,6 @@ async function apiRequest(url, options = {}) {
   // 如果有token，加入Authorization header
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
-    console.log('Authorization header已設置')
-  } else {
-    console.warn('沒有找到Token!')
   }
 
   const requestConfig = {
@@ -156,11 +148,11 @@ export const API_ENDPOINTS = {
   },
   SHEETS: '/sheets',
   READ_COLUMNS: '/read_columns',
-  RAW_DATA: '/raw_data',
+  RAW_DATA: '/column_stats',
 
   // 資料庫相關
   DATABASE: {
-    TABLES: '/database_tables',
+    TABLES: '/database/tables',
     TABLE_COLUMNS: '/table_columns',
     NEW_TABLES: '/database/tables',
     TABLE_COUNT: '/database/tables',

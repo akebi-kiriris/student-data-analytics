@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="analysis-page">
     <!-- 頂部導航欄 -->
     <header class="top-navbar">
@@ -1387,7 +1387,7 @@
           </div>
           <div class="chart-with-export">
             <div class="chart-container" style="position: relative; height: 400px; width: 100%;">
-              <canvas id="statsChart"></canvas>
+              <div id="statsChart" style="width: 100%; height: 100%;"></div>
             </div>
             <el-button 
               type="primary" 
@@ -1409,7 +1409,7 @@
           </div>
           <div class="chart-with-export">
             <div class="chart-container" style="position: relative; height: 350px; width: 100%;">
-              <canvas id="multiSubjectChart"></canvas>
+              <div id="multiSubjectChart" style="width: 100%; height: 100%;"></div>
             </div>
             <el-button 
               type="primary" 
@@ -1481,7 +1481,7 @@
             </p>
           </div>
           <div class="chart-with-export">
-            <canvas id="yearlyAdmissionChart" style="width: 100%; height: 400px;"></canvas>
+            <div id="yearlyAdmissionChart" style="width: 100%; height: 400px;"></div>
             <el-button 
               type="primary" 
               class="export-btn"
@@ -1552,7 +1552,7 @@
             </p>
           </div>
           <div class="chart-with-export">
-            <canvas id="schoolSourceChart" style="width: 100%; height: 400px;"></canvas>
+            <div id="schoolSourceChart" style="width: 100%; height: 400px;"></div>
             <el-button 
               type="primary" 
               class="export-btn"
@@ -1633,7 +1633,7 @@
             </p>
           </div>
           <div class="chart-with-export">
-            <canvas id="admissionMethodChart" style="width: 100%; height: 400px;"></canvas>
+            <div id="admissionMethodChart" style="width: 100%; height: 400px;"></div>
             <el-button 
               type="primary" 
               class="export-btn"
@@ -2132,7 +2132,6 @@ import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { authService } from '../services/auth.js'
 import { apiService, API_ENDPOINTS } from '../services/api.js'
-import Chart from 'chart.js/auto'
 import * as echarts from 'echarts'
 
 // 導航欄相關
@@ -2426,23 +2425,23 @@ const setActiveBlock = (blockName) => {
   
   // 清理圖表
   if (columnChartInstance) {
-    columnChartInstance.destroy()
+    columnChartInstance.dispose()
     columnChartInstance = null
   }
   if (multiSubjectChartInstance) {
-    multiSubjectChartInstance.destroy()
+    multiSubjectChartInstance.dispose()
     multiSubjectChartInstance = null
   }
   if (yearlyAdmissionChartInstance) {
-    yearlyAdmissionChartInstance.destroy()
+    yearlyAdmissionChartInstance.dispose()
     yearlyAdmissionChartInstance = null
   }
   if (schoolSourceChartInstance) {
-    schoolSourceChartInstance.destroy()
+    schoolSourceChartInstance.dispose()
     schoolSourceChartInstance = null
   }
   if (admissionMethodChartInstance) {
-    admissionMethodChartInstance.destroy()
+    admissionMethodChartInstance.dispose()
     admissionMethodChartInstance = null
   }
   if (geoChartInstance) {
@@ -2458,6 +2457,10 @@ const setActiveBlock = (blockName) => {
   if (topSchoolsChartInstance) {
     topSchoolsChartInstance.dispose()
     topSchoolsChartInstance = null
+  }
+  if (subjectAverageChartInstance) {
+    subjectAverageChartInstance.dispose()
+    subjectAverageChartInstance = null
   }
   if (genderSubjectChartInstance) {
     genderSubjectChartInstance.dispose()
@@ -3154,12 +3157,11 @@ const getGenderSubjectStats = async () => {
 
 const showRawData = async () => {
   try {
-    // 使用資料庫表格而非檔案
-    const data = await apiService.post(API_ENDPOINTS.RAW_DATA, {
+    const data = await apiService.post(API_ENDPOINTS.COLUMN_STATS, {
       table_name: selectedTable.value,
       column: selectedColumn.value
     })
-    rawData.value = data.data
+    rawData.value = data.raw_data || []
   } catch (error) {
     ElMessage.error('載入原始資料失敗')
     console.error(error)
@@ -3171,22 +3173,18 @@ const renderColumnChart = (data) => {
   if (!data || !data.data) return
   
   nextTick(() => {
-    const canvas = document.getElementById('statsChart')
-    if (!canvas) {
-      console.error('Canvas element not found: statsChart')
+    const chartContainer = document.getElementById('statsChart')
+    if (!chartContainer) {
+      console.error('Chart element not found: statsChart')
       return
     }
-    
-    const ctx = canvas.getContext('2d')
-    if (!ctx) {
-      console.error('Cannot get 2d context from canvas')
-      return
-    }
-    
+
     if (columnChartInstance) {
-      columnChartInstance.destroy()
+      columnChartInstance.dispose()
       columnChartInstance = null
     }
+
+    columnChartInstance = echarts.init(chartContainer)
     
     // 處理數據為數值
     const validValues = data.data
@@ -3199,7 +3197,8 @@ const renderColumnChart = (data) => {
     const min = Math.min(...validValues)
     const max = Math.max(...validValues)
     const binCount = Math.min(20, Math.max(5, Math.ceil(Math.sqrt(validValues.length))))
-    const binWidth = (max - min) / binCount
+    const rawBinWidth = (max - min) / binCount
+    const binWidth = rawBinWidth === 0 ? 1 : rawBinWidth
     
     // 初始化區間
     const bins = Array(binCount).fill(0)
@@ -3219,61 +3218,51 @@ const renderColumnChart = (data) => {
       bins[binIndex]++
     })
     
-    columnChartInstance = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: binLabels,
-        datasets: [{
-          label: `${data.column_name} 分布`,
-          data: bins,
-          backgroundColor: 'rgba(54, 162, 235, 0.6)',
-          borderColor: 'rgba(54, 162, 235, 1)',
-          borderWidth: 1
-        }]
+    columnChartInstance.setOption({
+      title: {
+        text: `${data.column_name} 數值分布直方圖`,
+        left: 'center'
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        plugins: {
-          title: { 
-            display: true, 
-            text: `${data.column_name} 數值分布直方圖`,
-            font: { size: 16 }
-          },
-          legend: { 
-            position: 'top',
-            display: true
-          },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                const total = validValues.length
-                const count = context.parsed.y
-                const percentage = ((count / total) * 100).toFixed(1)
-                return `頻率: ${count} (${percentage}%)`
-              }
-            }
-          }
-        },
-        scales: {
-          x: {
-            title: { 
-              display: true, 
-              text: '數值區間' 
-            }
-          },
-          y: {
-            title: { 
-              display: true, 
-              text: '頻率' 
-            },
-            beginAtZero: true,
-            ticks: {
-              stepSize: 1
-            }
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter: (params) => {
+          const point = Array.isArray(params) ? params[0] : params
+          const count = Number(point?.value || 0)
+          const total = validValues.length
+          const percentage = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0'
+          return `${point?.axisValue || ''}<br/>頻率: ${count} (${percentage}%)`
+        }
+      },
+      grid: {
+        left: '5%',
+        right: '4%',
+        bottom: '8%',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        data: binLabels,
+        name: '數值區間',
+        axisLabel: {
+          rotate: binLabels.length > 10 ? 30 : 0
+        }
+      },
+      yAxis: {
+        type: 'value',
+        name: '頻率',
+        minInterval: 1
+      },
+      series: [
+        {
+          name: `${data.column_name} 分布`,
+          type: 'bar',
+          data: bins,
+          itemStyle: {
+            color: 'rgba(54, 162, 235, 0.8)'
           }
         }
-      }
+      ]
     })
   })
 }
@@ -3282,22 +3271,18 @@ const renderMultiSubjectChart = (data) => {
   if (!data || !data.years || !data.subjects) return
   
   nextTick(() => {
-    const canvas = document.getElementById('multiSubjectChart')
-    if (!canvas) {
-      console.error('Canvas element not found: multiSubjectChart')
+    const chartContainer = document.getElementById('multiSubjectChart')
+    if (!chartContainer) {
+      console.error('Chart element not found: multiSubjectChart')
       return
     }
-    
-    const ctx = canvas.getContext('2d')
-    if (!ctx) {
-      console.error('Cannot get 2d context from canvas')
-      return
-    }
-    
+
     if (multiSubjectChartInstance) {
-      multiSubjectChartInstance.destroy()
+      multiSubjectChartInstance.dispose()
       multiSubjectChartInstance = null
     }
+
+    multiSubjectChartInstance = echarts.init(chartContainer)
     
     const { years, subjects, data: chartData } = data
     const colors = [
@@ -3309,40 +3294,51 @@ const renderMultiSubjectChart = (data) => {
       'rgba(255, 159, 64, 0.7)'
     ]
     
-    const datasets = years.map((year, i) => ({
-      label: year,
-      data: subjects.map(subj => chartData[subj][i]),
-      backgroundColor: colors[i % colors.length]
-    }))
-    
-    multiSubjectChartInstance = new Chart(ctx, {
+    const series = years.map((year, i) => ({
+      name: String(year),
       type: 'bar',
-      data: {
-        labels: subjects,
-        datasets
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          title: { display: true, text: '各學年各科平均分數' },
-          legend: { position: 'top' }
-        },
-        scales: {
-          x: { 
-            title: { display: true, text: '學科' },
-            ticks: {
-              maxRotation: 45,
-              minRotation: 0
-            }
-          },
-          y: { 
-            title: { display: true, text: '平均分數' }, 
-            beginAtZero: true,
-            max: 100
-          }
-        }
+      data: subjects.map((subject) => chartData?.[subject]?.[i] ?? null),
+      itemStyle: {
+        color: colors[i % colors.length]
       }
+    }))
+
+    multiSubjectChartInstance.setOption({
+      title: {
+        text: '各學年各科平均分數',
+        left: 'center'
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' }
+      },
+      legend: {
+        top: 30,
+        data: years.map((year) => String(year))
+      },
+      grid: {
+        left: '5%',
+        right: '4%',
+        bottom: '10%',
+        top: 80,
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        name: '學科',
+        data: subjects,
+        axisLabel: {
+          interval: 0,
+          rotate: subjects.length > 8 ? 35 : 0
+        }
+      },
+      yAxis: {
+        type: 'value',
+        name: '平均分數',
+        min: 0,
+        max: 100
+      },
+      series
     })
   })
 }
@@ -3351,126 +3347,113 @@ const renderYearlyAdmissionChart = (data) => {
   if (!data || !data.years) return
   
   nextTick(() => {
-    const canvas = document.getElementById('yearlyAdmissionChart')
-    if (!canvas) {
-      console.error('Canvas element not found: yearlyAdmissionChart')
+    const chartContainer = document.getElementById('yearlyAdmissionChart')
+    if (!chartContainer) {
+      console.error('Chart element not found: yearlyAdmissionChart')
       return
     }
-    
-    const ctx = canvas.getContext('2d')
-    if (!ctx) {
-      console.error('Cannot get 2d context from canvas')
-      return
-    }
-    
+
     if (yearlyAdmissionChartInstance) {
-      yearlyAdmissionChartInstance.destroy()
+      yearlyAdmissionChartInstance.dispose()
       yearlyAdmissionChartInstance = null
     }
+
+    yearlyAdmissionChartInstance = echarts.init(chartContainer)
     
-    const datasets = []
+    const series = []
     
     // 檢查是否有性別區分
     if (data.has_gender) {
       // 添加男生資料
-      datasets.push({
+      series.push({
+        name: '男生',
         type: 'bar',
-        label: '男生',
+        stack: 'students',
         data: data.male_counts,
-        backgroundColor: 'rgba(54, 162, 235, 0.6)',
-        borderColor: 'rgba(54, 162, 235, 1)',
-        borderWidth: 1,
-        barPercentage: 0.8
+        itemStyle: {
+          color: 'rgba(54, 162, 235, 0.75)'
+        }
       })
       
       // 添加女生資料
-      datasets.push({
+      series.push({
+        name: '女生',
         type: 'bar',
-        label: '女生',
+        stack: 'students',
         data: data.female_counts,
-        backgroundColor: 'rgba(255, 99, 132, 0.6)',
-        borderColor: 'rgba(255, 99, 132, 1)',
-        borderWidth: 1,
-        barPercentage: 0.8
+        itemStyle: {
+          color: 'rgba(255, 99, 132, 0.75)'
+        }
       })
     } else {
       // 沒有性別區分，使用總人數
-      datasets.push({
+      series.push({
+        name: '入學人數',
         type: 'bar',
-        label: '入學人數',
+        stack: 'students',
         data: data.total_counts,
-        backgroundColor: 'rgba(75, 192, 192, 0.6)',
-        borderColor: 'rgba(75, 192, 192, 1)',
-        borderWidth: 1,
-        barPercentage: 0.8
+        itemStyle: {
+          color: 'rgba(75, 192, 192, 0.75)'
+        }
       })
     }
     
     // 添加總人數趨勢線
-    datasets.push({
+    series.push({
+      name: '總人數趨勢',
       type: 'line',
-      label: '總人數趨勢',
       data: data.total_counts,
-      borderColor: 'rgba(153, 102, 255, 1)',
-      borderWidth: 2,
-      fill: false,
-      tension: 0.4,
-      pointRadius: 4,
-      pointHoverRadius: 6
-    })
-    
-    yearlyAdmissionChartInstance = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: data.years,
-        datasets: datasets
+      smooth: true,
+      symbolSize: 8,
+      lineStyle: {
+        width: 2,
+        color: 'rgba(153, 102, 255, 1)'
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        interaction: {
-          intersect: false,
-          mode: 'index'
-        },
-        plugins: {
-          title: {
-            display: true,
-            text: '每年入學生數量統計',
-            font: { size: 16 }
-          },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                let label = context.dataset.label || '';
-                if (label) {
-                  label += ': ';
-                }
-                if (context.parsed.y !== null) {
-                  label += context.parsed.y + ' 人';
-                }
-                return label;
-              }
-            }
-          }
-        },
-        scales: {
-          x: {
-            title: {
-              display: true,
-              text: '年度'
-            },
-            stacked: true
-          },
-          y: {
-            title: {
-              display: true,
-              text: '人數'
-            },
-            stacked: true,
-            beginAtZero: true
-          }
-        }
+      itemStyle: {
+        color: 'rgba(153, 102, 255, 1)'
       }
+    })
+
+    yearlyAdmissionChartInstance.setOption({
+      title: {
+        text: '每年入學生數量統計',
+        left: 'center'
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter: (params) => {
+          const lines = []
+          if (Array.isArray(params) && params.length > 0) {
+            lines.push(params[0].axisValue)
+            params.forEach((item) => {
+              lines.push(`${item.marker}${item.seriesName}: ${item.value ?? 0} 人`)
+            })
+          }
+          return lines.join('<br/>')
+        }
+      },
+      legend: {
+        top: 30
+      },
+      grid: {
+        left: '5%',
+        right: '4%',
+        bottom: '8%',
+        top: 80,
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        name: '年度',
+        data: data.years
+      },
+      yAxis: {
+        type: 'value',
+        name: '人數',
+        min: 0
+      },
+      series
     })
   })
 }
@@ -3479,22 +3462,18 @@ const renderSchoolSourceChart = (data) => {
   if (!data || !data.years) return
   
   nextTick(() => {
-    const canvas = document.getElementById('schoolSourceChart')
-    if (!canvas) {
-      console.error('Canvas element not found: schoolSourceChart')
+    const chartContainer = document.getElementById('schoolSourceChart')
+    if (!chartContainer) {
+      console.error('Chart element not found: schoolSourceChart')
       return
     }
-    
-    const ctx = canvas.getContext('2d')
-    if (!ctx) {
-      console.error('Cannot get 2d context from canvas')
-      return
-    }
-    
+
     if (schoolSourceChartInstance) {
-      schoolSourceChartInstance.destroy()
+      schoolSourceChartInstance.dispose()
       schoolSourceChartInstance = null
     }
+
+    schoolSourceChartInstance = echarts.init(chartContainer)
     
     // 定義顏色方案
     const colorScheme = {
@@ -3510,62 +3489,63 @@ const renderSchoolSourceChart = (data) => {
       '其他': '#C4C4C4'
     }
     
-    // 準備 datasets
-    const datasets = data.school_types.map(schoolType => ({
-      label: schoolType,
-      data: data.data[schoolType].counts,
-      backgroundColor: colorScheme[schoolType] || '#C4C4C4',
-      borderColor: colorScheme[schoolType] || '#C4C4C4',
-      borderWidth: 1,
-      barPercentage: 0.5,
-      categoryPercentage: 0.9
-    }))
-    
-    schoolSourceChartInstance = new Chart(ctx, {
+    const series = data.school_types.map((schoolType) => ({
+      name: schoolType,
       type: 'bar',
-      data: {
-        labels: data.years,
-        datasets
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          title: { 
-            display: true, 
-            text: '(下方圖表中各年度入學生學校來源類型分布)' 
-          },
-          legend: { 
-            position: 'top',
-            labels: {
-              boxWidth: 12,
-              padding: 8
-            }
-          },
-          tooltip: {
-            callbacks: {
-              afterLabel: function(context) {
-                const yearIndex = context.dataIndex
-                const schoolType = context.dataset.label
-                const count = data.data[schoolType].counts[yearIndex]
-                const percentage = data.data[schoolType].percentages[yearIndex]
-                const total = data.year_totals[yearIndex]
-                return [`人數: ${count}人`, `比例: ${percentage}%`, `該年總計: ${total}人`]
-              }
-            }
-          }
-        },
-        scales: {
-          x: { 
-            title: { display: true, text: '年份' },
-            stacked: true
-          },
-          y: {
-            title: { display: true, text: '人數' },
-            stacked: true,
-            beginAtZero: true
-          }
-        }
+      stack: 'total',
+      data: data.data[schoolType].counts,
+      itemStyle: {
+        color: colorScheme[schoolType] || '#C4C4C4'
       }
+    }))
+
+    schoolSourceChartInstance.setOption({
+      title: {
+        text: '(下方圖表中各年度入學生學校來源類型分布)',
+        left: 'center'
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter: (params) => {
+          if (!Array.isArray(params) || params.length === 0) return ''
+          const yearIndex = params[0].dataIndex
+          const total = data.year_totals?.[yearIndex] ?? 0
+          const lines = [String(params[0].axisValue)]
+          params.forEach((item) => {
+            const schoolType = item.seriesName
+            const count = data.data?.[schoolType]?.counts?.[yearIndex] ?? 0
+            const percentage = data.data?.[schoolType]?.percentages?.[yearIndex] ?? 0
+            if (count > 0) {
+              lines.push(`${item.marker}${schoolType}: ${count}人 (${percentage}%)`)
+            }
+          })
+          lines.push(`總計: ${total}人`)
+          return lines.join('<br/>')
+        }
+      },
+      legend: {
+        top: 30,
+        type: 'scroll'
+      },
+      grid: {
+        left: '5%',
+        right: '4%',
+        bottom: '8%',
+        top: 90,
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        name: '年份',
+        data: data.years
+      },
+      yAxis: {
+        type: 'value',
+        name: '人數',
+        min: 0
+      },
+      series
     })
   })
 }
@@ -3574,22 +3554,18 @@ const renderAdmissionMethodChart = (data) => {
   if (!data || !data.years) return
   
   nextTick(() => {
-    const canvas = document.getElementById('admissionMethodChart')
-    if (!canvas) {
-      console.error('Canvas element not found: admissionMethodChart')
+    const chartContainer = document.getElementById('admissionMethodChart')
+    if (!chartContainer) {
+      console.error('Chart element not found: admissionMethodChart')
       return
     }
-    
-    const ctx = canvas.getContext('2d')
-    if (!ctx) {
-      console.error('Cannot get 2d context from canvas')
-      return
-    }
-    
+
     if (admissionMethodChartInstance) {
-      admissionMethodChartInstance.destroy()
+      admissionMethodChartInstance.dispose()
       admissionMethodChartInstance = null
     }
+
+    admissionMethodChartInstance = echarts.init(chartContainer)
     
     // 定義顏色方案
     const colorScheme = {
@@ -3602,60 +3578,63 @@ const renderAdmissionMethodChart = (data) => {
       '其他': '#C4C4C4'
     }
     
-    // 準備 datasets
-    const datasets = data.method_types.map(methodType => ({
-      label: methodType,
-      data: data.data[methodType].counts,
-      backgroundColor: colorScheme[methodType] || '#C4C4C4',
-      borderColor: colorScheme[methodType] || '#C4C4C4',
-      borderWidth: 1
-    }))
-    
-    admissionMethodChartInstance = new Chart(ctx, {
+    const series = data.method_types.map((methodType) => ({
+      name: methodType,
       type: 'bar',
-      data: {
-        labels: data.years,
-        datasets
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          title: { 
-            display: true, 
-            text: '各年度入學生入學管道分布' 
-          },
-          legend: { 
-            position: 'top',
-            labels: {
-              boxWidth: 12,
-              padding: 8
-            }
-          },
-          tooltip: {
-            callbacks: {
-              afterLabel: function(context) {
-                const yearIndex = context.dataIndex
-                const methodType = context.dataset.label
-                const count = data.data[methodType].counts[yearIndex]
-                const percentage = data.data[methodType].percentages[yearIndex]
-                const total = data.year_totals[yearIndex]
-                return [`人數: ${count}人`, `比例: ${percentage}%`, `該年總計: ${total}人`]
-              }
-            }
-          }
-        },
-        scales: {
-          x: { 
-            title: { display: true, text: '年份' },
-            stacked: true
-          },
-          y: {
-            title: { display: true, text: '人數' },
-            stacked: true,
-            beginAtZero: true
-          }
-        }
+      stack: 'total',
+      data: data.data[methodType].counts,
+      itemStyle: {
+        color: colorScheme[methodType] || '#C4C4C4'
       }
+    }))
+
+    admissionMethodChartInstance.setOption({
+      title: {
+        text: '各年度入學生入學管道分布',
+        left: 'center'
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter: (params) => {
+          if (!Array.isArray(params) || params.length === 0) return ''
+          const yearIndex = params[0].dataIndex
+          const total = data.year_totals?.[yearIndex] ?? 0
+          const lines = [String(params[0].axisValue)]
+          params.forEach((item) => {
+            const methodType = item.seriesName
+            const count = data.data?.[methodType]?.counts?.[yearIndex] ?? 0
+            const percentage = data.data?.[methodType]?.percentages?.[yearIndex] ?? 0
+            if (count > 0) {
+              lines.push(`${item.marker}${methodType}: ${count}人 (${percentage}%)`)
+            }
+          })
+          lines.push(`總計: ${total}人`)
+          return lines.join('<br/>')
+        }
+      },
+      legend: {
+        top: 30,
+        type: 'scroll'
+      },
+      grid: {
+        left: '5%',
+        right: '4%',
+        bottom: '8%',
+        top: 90,
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        name: '年份',
+        data: data.years
+      },
+      yAxis: {
+        type: 'value',
+        name: '人數',
+        min: 0
+      },
+      series
     })
   })
 }
@@ -3664,7 +3643,7 @@ const renderAdmissionMethodChart = (data) => {
 const showExportDialog = (chartId, title, data) => {
   currentChartId.value = chartId
   currentExportTitle.value = title
-  currentChartType.value = 'canvas'
+  currentChartType.value = 'echarts'
   currentChartData.value = data
   exportDialogVisible.value = true
 }
@@ -4298,6 +4277,25 @@ const exportEChart = (chartId, chartTitle) => {
 }
 
 const getEChartsInstance = (chartId) => {
+  const chartInstanceMap = {
+    statsChart: columnChartInstance,
+    multiSubjectChart: multiSubjectChartInstance,
+    yearlyAdmissionChart: yearlyAdmissionChartInstance,
+    schoolSourceChart: schoolSourceChartInstance,
+    admissionMethodChart: admissionMethodChartInstance,
+    topSchoolsChart: topSchoolsChartInstance,
+    subjectAverageChart: subjectAverageChartInstance,
+    genderSubjectChart: genderSubjectChartInstance,
+    admissionSubjectChart: admissionSubjectChartInstance,
+    schoolTypeSubjectChart: schoolTypeSubjectChartInstance,
+    regionSubjectChart: regionSubjectChartInstance,
+    geoChart: geoChartInstance
+  }
+
+  if (chartInstanceMap[chartId]) {
+    return chartInstanceMap[chartId]
+  }
+
   if (chartId === 'geoChart') {
     return geoChartInstance
   } else if (chartId.startsWith('geoChart-')) {
@@ -4312,22 +4310,40 @@ onBeforeUnmount(() => {
   cleanupFunctions.forEach(cleanup => cleanup())
   
   if (columnChartInstance) {
-    columnChartInstance.destroy()
+    columnChartInstance.dispose()
   }
   if (multiSubjectChartInstance) {
-    multiSubjectChartInstance.destroy()
+    multiSubjectChartInstance.dispose()
   }
   if (yearlyAdmissionChartInstance) {
-    yearlyAdmissionChartInstance.destroy()
+    yearlyAdmissionChartInstance.dispose()
   }
   if (schoolSourceChartInstance) {
-    schoolSourceChartInstance.destroy()
+    schoolSourceChartInstance.dispose()
   }
   if (admissionMethodChartInstance) {
-    admissionMethodChartInstance.destroy()
+    admissionMethodChartInstance.dispose()
   }
   if (geoChartInstance) {
     geoChartInstance.dispose()
+  }
+  if (topSchoolsChartInstance) {
+    topSchoolsChartInstance.dispose()
+  }
+  if (subjectAverageChartInstance) {
+    subjectAverageChartInstance.dispose()
+  }
+  if (genderSubjectChartInstance) {
+    genderSubjectChartInstance.dispose()
+  }
+  if (admissionSubjectChartInstance) {
+    admissionSubjectChartInstance.dispose()
+  }
+  if (schoolTypeSubjectChartInstance) {
+    schoolTypeSubjectChartInstance.dispose()
+  }
+  if (regionSubjectChartInstance) {
+    regionSubjectChartInstance.dispose()
   }
   if (geoDetailedChartInstances) {
     Object.values(geoDetailedChartInstances).forEach(chart => {
@@ -6441,3 +6457,4 @@ onMounted(() => {
   color: #303133;
 }
 </style>
+
