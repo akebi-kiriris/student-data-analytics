@@ -17,8 +17,11 @@ RUN pip install --no-cache-dir --upgrade pip && \
     rm -f requirements-cloud.txt
 
 
-# 複製應用程式碼與資料庫
-COPY app.py ./
+# 複製應用程式與分層模組
+COPY app.py app_factory.py ./
+COPY blueprints/ ./blueprints/
+COPY service/ ./service/
+COPY repository/ ./repository/
 
 # 複製資料庫目錄
 COPY database/ ./database/
